@@ -135,28 +135,45 @@ export default function VideoDisplay({
     formData.append('modelo', model)
 
     try {
-      const response = await fetch('http://localhost:8000/upload/video', {
-        method: 'POST',
-        body: formData,
-      })
+        const response = await fetch('http://localhost:8000/upload/video', {
+            method: 'POST',
+            body: formData,
+        })
 
-      if (!response.ok) throw new Error('Error al procesar el archivo')
+        if (!response.ok) throw new Error('Error al procesar el archivo')
 
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      
-      if (onProcessingComplete) {
-        onProcessingComplete(url)
-      }
-      
-      setStatus("Procesamiento completado")
+        const { task_id } = await response.json()
+        
+        // Conectar WebSocket para progreso
+        const ws = new WebSocket(`ws://localhost:8000/ws/progress/${task_id}`)
+        
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data)
+            
+            if (data.type === "frame" && processedImageRef.current) {
+                processedImageRef.current.src = `data:image/jpeg;base64,${data.frame}`
+                setStatus(`Procesando... ${Math.round(data.progress)}%`)
+            }
+            
+            if (data.type === "complete" && onProcessingComplete) {
+                onProcessingComplete(`http://localhost:8000/video/${data.output_path}`)
+                ws.close()
+                setIsProcessing(false)
+            }
+        }
+        
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error)
+            setStatus('Error en la conexión')
+            setIsProcessing(false)
+        }
+        
     } catch (error) {
-      console.error('Error procesando archivo:', error)
-      setStatus('Error al procesar el archivo')
-    } finally {
-      setIsProcessing(false)
+        console.error('Error procesando archivo:', error)
+        setStatus('Error al procesar el archivo')
+        setIsProcessing(false)
     }
-  }
+}
 
   // 5. Detener todo el análisis
   const stopAnalysis = () => {
