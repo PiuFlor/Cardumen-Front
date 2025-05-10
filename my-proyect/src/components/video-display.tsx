@@ -1,196 +1,265 @@
 "use client"
-
-import type React from "react"
-import { useEffect, useRef } from "react"
-import { useYolo } from "../hooks/use-yolo"
-import { useMediaPipe } from "../hooks/use-mediapipe"
+import { useEffect, useRef, useState } from "react"
 
 interface VideoDisplayProps {
-  videoRef: React.RefObject<HTMLVideoElement | null>
-  canvasRef: React.RefObject<HTMLCanvasElement | null>
   videoSource: "file" | "webcam"
   videoFile: File | null
   isAnalyzing: boolean
   framework: "yolo" | "mediapipe"
   model: string
-  fps?: number
-  resolution?: string
-  onAnalysisComplete?: (isAnalyzing: boolean) => void
-  videoUrl?: string | null
+  onProcessingComplete?: (url: string) => void
+  processedUrl?: string | null
 }
 
 export default function VideoDisplay({
-  videoRef,
-  canvasRef,
   videoSource,
   videoFile,
   isAnalyzing,
   framework,
   model,
-  fps = 30,
-  resolution = "720p",
+  onProcessingComplete,
+  processedUrl
 }: VideoDisplayProps) {
-  const { processFrameYolo, loadYoloModel } = useYolo()
-  const { processFrameMediaPipe, loadMediaPipeModel } = useMediaPipe()
-  const requestIdRef = useRef<number | null>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const processedImageRef = useRef<HTMLImageElement>(null)
+  const [status, setStatus] = useState("Presiona 'Iniciar Análisis'")
+  const [isProcessing, setIsProcessing] = useState(false)
+  const wsRef = useRef<WebSocket | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const frameIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  const getResolutionDimensions = () => {
-    switch (resolution) {
-      case "480p":
-        return { width: 640, height: 480 }
-      case "720p":
-        return { width: 1280, height: 720 }
-      case "1080p":
-        return { width: 1920, height: 1080 }
-      default:
-        return { width: 1280, height: 720 }
+  // 1. Configuración de la cámara web
+  const startWebcam = async () => {
+    try {
+      setStatus("Iniciando cámara...")
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: true
+      })
+      streamRef.current = stream
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await new Promise((resolve) => {
+          if (videoRef.current) {
+            videoRef.current.onloadedmetadata = resolve
+          }
+        })
+        videoRef.current.play()
+        setStatus("Cámara lista")
+      }
+    } catch (error) {
+      console.error("Error al acceder a la cámara:", error)
+      setStatus("Error: No se pudo acceder a la cámara")
     }
   }
 
-  const { width, height } = getResolutionDimensions()
+  // 2. Conexión WebSocket para análisis en tiempo real
+  const connectWebSocket = () => {
+    setStatus("Conectando al servidor...")
+    const ws = new WebSocket(
+      `ws://127.0.0.1:8000/ws/image?tecnologia=${framework}&modelo=${model}`
+    )
+    wsRef.current = ws
 
-  useEffect(() => {
-    const video = videoRef.current
-    if (!video) return
-
-    if (video.srcObject) {
-      const stream = video.srcObject as MediaStream
-      stream.getTracks().forEach((track) => track.stop())
-      video.srcObject = null
+    ws.onopen = () => {
+      setStatus("Analizando en tiempo real...")
+      startFrameProcessing()
     }
 
-    if (videoSource === "webcam") {
-      navigator.mediaDevices
-        .getUserMedia({
-          video: { width: { ideal: width }, height: { ideal: height } },
-        })
-        .then((stream) => {
-          video.srcObject = stream
-          video.play()
-        })
-        .catch((err) => console.error("Error accediendo a la cámara web:", err))
-    } else if (videoSource === "file" && videoFile) {
-      video.src = URL.createObjectURL(videoFile)
-      video.play()
-    }
-
-    return () => {
-      if (video.srcObject) {
-        const stream = video.srcObject as MediaStream
-        stream.getTracks().forEach((track) => track.stop())
+    ws.onmessage = (event) => {
+      if (processedImageRef.current) {
+        processedImageRef.current.src = `data:image/jpeg;base64,${event.data}`
       }
     }
-  }, [videoSource, videoFile, width, height])
 
-  useEffect(() => {
-    if (framework === "yolo") {
-      loadYoloModel(model)
-    } else {
-      loadMediaPipeModel(model)
-    }
-  }, [framework, model, loadYoloModel, loadMediaPipeModel])
-
-  useEffect(() => {
-    const video = videoRef.current
-    const canvas = canvasRef.current
-    if (!video || !canvas || !isAnalyzing) {
-      if (requestIdRef.current !== null) {
-        cancelAnimationFrame(requestIdRef.current)
-        requestIdRef.current = null
-      }
-      return
+    ws.onclose = () => {
+      setStatus("Conexión cerrada")
+      stopFrameProcessing()
     }
 
-    const ctx = canvas.getContext("2d")
-    if (!ctx) return
+    ws.onerror = (error) => {
+      console.error("Error en WebSocket:", error)
+      setStatus("Error en la conexión")
+    }
+  }
 
-    canvas.width = width
-    canvas.height = height
+  // 3. Procesamiento de frames
+  const startFrameProcessing = () => {
+    if (!frameIntervalRef.current) {
+      frameIntervalRef.current = setInterval(sendFrame, 100)
+    }
+  }
 
-    let lastFrameTime = 0
-    const frameInterval = 1000 / fps
+  const stopFrameProcessing = () => {
+    if (frameIntervalRef.current) {
+      clearInterval(frameIntervalRef.current)
+      frameIntervalRef.current = null
+    }
+  }
 
-    const processFrame = (timestamp: number) => {
-      if (!video || !canvas || !ctx || !isAnalyzing) return
-
-      if (timestamp - lastFrameTime >= frameInterval) {
-        lastFrameTime = timestamp
-
+  const sendFrame = () => {
+    if (videoRef.current && canvasRef.current && wsRef.current?.readyState === WebSocket.OPEN) {
+      const video = videoRef.current
+      const canvas = canvasRef.current
+      const ctx = canvas.getContext('2d')
+      
+      if (ctx && video.videoWidth > 0) {
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-        if (framework === "yolo") {
-          processFrameYolo(video, canvas, model)
-        } else {
-          processFrameMediaPipe(video, canvas, model)
-        }
+        
+        canvas.toBlob((blob) => {
+          if (!blob) return
+          const reader = new FileReader()
+          reader.onload = () => {
+            const base64Data = reader.result?.toString().split(',')[1]
+            if (base64Data && wsRef.current?.readyState === WebSocket.OPEN) {
+              wsRef.current.send(base64Data)
+            }
+          }
+          reader.readAsDataURL(blob)
+        }, 'image/jpeg')
       }
-
-      requestIdRef.current = requestAnimationFrame(processFrame)
     }
+  }
 
-    requestIdRef.current = requestAnimationFrame(processFrame)
+  // 4. Procesamiento de archivos con seguimiento de estado
+  const processFile = async () => {
+    setIsProcessing(true)
+    setStatus("Procesando archivo...")
+    
+    const formData = new FormData()
+    formData.append('file', videoFile!)
+    formData.append('tecnologia', framework)
+    formData.append('modelo', model)
+
+    try {
+      const response = await fetch('http://localhost:8000/upload/video', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) throw new Error('Error al procesar el archivo')
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      
+      if (onProcessingComplete) {
+        onProcessingComplete(url)
+      }
+      
+      setStatus("Procesamiento completado")
+    } catch (error) {
+      console.error('Error procesando archivo:', error)
+      setStatus('Error al procesar el archivo')
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  // 5. Detener todo el análisis
+  const stopAnalysis = () => {
+    if (videoSource === "webcam") {
+      stopFrameProcessing()
+      if (wsRef.current) {
+        wsRef.current.close()
+      }
+      setStatus("Análisis detenido")
+    }
+  }
+
+  // Efectos principales
+  useEffect(() => {
+    if (videoSource === "webcam" && !processedUrl) {
+      startWebcam()
+    }
 
     return () => {
-      if (requestIdRef.current !== null) {
-        cancelAnimationFrame(requestIdRef.current)
-        requestIdRef.current = null
+      stopAnalysis()
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
       }
     }
-  }, [
-    isAnalyzing,
-    videoRef,
-    canvasRef,
-    framework,
-    model,
-    fps,
-    width,
-    height,
-    processFrameYolo,
-    processFrameMediaPipe,
-  ])
+  }, [videoSource, processedUrl])
+
+  useEffect(() => {
+    if (isAnalyzing && videoSource === "webcam") {
+      connectWebSocket()
+    } else {
+      stopAnalysis()
+    }
+  }, [isAnalyzing, framework, model])
+
+  useEffect(() => {
+    if (isAnalyzing && videoSource === "file" && videoFile && !processedUrl) {
+      processFile()
+    }
+  }, [isAnalyzing, videoFile, processedUrl])
 
   return (
-    <div className="relative overflow-hidden aspect-video w-full rounded-lg bg-gradient-to-br from-gray-900 to-gray-800 p-2">
-      <div className="relative w-full h-full rounded-lg overflow-hidden">
-        <video ref={videoRef} className="hidden" muted playsInline />
-        <canvas ref={canvasRef} className="w-full h-full object-contain rounded-lg" />
+    <div className="relative w-full h-full bg-black rounded-lg overflow-hidden">
+      {/* Video procesado (tiene prioridad si existe) */}
+      {processedUrl && videoSource === "file" && (
+        <video
+          src={processedUrl}
+          className="w-full h-full object-contain"
+          controls
+          muted
+          playsInline
+          autoPlay
+        />
+      )}
 
-        {!isAnalyzing && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 text-white rounded-lg backdrop-blur-sm">
-            <div className="animate-pulse mb-4">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-16 w-16 text-blue-400"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <polygon points="10 8 16 12 10 16 10 8" />
-              </svg>
-            </div>
-            <p className="text-xl font-semibold bg-gradient-to-r from-blue-400 to-purple-400 text-transparent bg-clip-text">
-              Presiona "Iniciar Análisis" para comenzar
-            </p>
-            <p className="text-gray-300 mt-2 text-sm max-w-md text-center">
-              Selecciona tus opciones de configuración y haz clic en el botón para iniciar el análisis en tiempo real
-            </p>
+      {/* Contenido de vista previa y análisis (solo si no hay resultado procesado) */}
+      {(!processedUrl || videoSource === "webcam") && (
+        <>
+          {/* Video de la cámara (solo vista previa) */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            className={`w-full h-full object-contain ${
+              isAnalyzing && videoSource === "webcam" ? 'hidden' : 'block'
+            }`}
+          />
+          
+          {/* Imagen procesada (durante análisis de webcam) */}
+          <img
+            ref={processedImageRef}
+            alt="Procesado"
+            className={`w-full h-full object-contain ${
+              isAnalyzing && videoSource === "webcam" ? 'block' : 'hidden'
+            }`}
+          />
+        </>
+      )}
+      
+      {/* Mensaje de procesamiento */}
+      {isProcessing && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70">
+          <div className="text-white text-center p-4 rounded-lg">
+            <div className="animate-pulse text-xl mb-2">Procesando...</div>
+            <div className="text-sm">Por favor espera mientras se procesa el video</div>
           </div>
-        )}
-
-        {isAnalyzing && (
-          <div className="absolute top-3 right-3 bg-black/50 text-white px-3 py-1 rounded-full text-sm backdrop-blur-sm flex items-center">
-            <span className="relative flex h-3 w-3 mr-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-            </span>
-            Analizando
-          </div>
-        )}
+        </div>
+      )}
+      
+      {/* Canvas oculto para procesamiento */}
+      <canvas ref={canvasRef} className="hidden" />
+      
+      {/* Estado */}
+      <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-3 py-1 rounded-md text-sm">
+        {status}
       </div>
+      
+      {/* Modelo activo */}
+      {isAnalyzing && (
+        <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white px-3 py-1 rounded-md text-sm">
+          {framework} - {model}
+        </div>
+      )}
     </div>
   )
 }

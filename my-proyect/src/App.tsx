@@ -1,64 +1,85 @@
-import { useState, useRef } from "react"
-import VideoSource from "./components/video-source"
-import ModelSelector from "./components/model-selector"
-import VideoDisplay from "./components/video-display"
-import { Button } from "./components/ui/button"
-import { Card, CardContent } from "./components/ui/card"
-import { Camera, Film, Play, Square } from "lucide-react"
+import { useState, useEffect } from "react";
+import VideoSource from "./components/video-source";
+import ModelSelector from "./components/model-selector";
+import VideoDisplay from "./components/video-display";
+import { Button } from "./components/ui/button";
+import { Card, CardContent } from "./components/ui/card";
+import { Camera, Film, Play, Square } from "lucide-react";
 
 export default function App() {
-  const [videoSource, setVideoSource] = useState<"file" | "webcam">("webcam")
-  const [videoFile, setVideoFile] = useState<File | null>(null)
+  const [videoSource, setVideoSource] = useState<"file" | "webcam">("webcam");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [framework, setFramework] = useState<"yolo" | "mediapipe">("yolo");
+  const [model, setModel] = useState<string>("");
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
+  const [modelOptions, setModelOptions] = useState({
+    yolo: ['yolo11n.pt', 'yolo11s.pt', 'yolo11m.pt', 'yolo11l.pt', 'yolo11x.pt'],
+    mediapipe: ["efficientdet_lite0_pf32.tflite","efficientdet_lite0_int8.tflite", "efficientdet_lite0_pf16.tflite", "ssd_mobilenet_v2_int8.tflite", "ssd_mobilenet_v2_pf32.tflite" ]
+  });
+  const [isLoadingModels, setIsLoadingModels] = useState<boolean>(false);
 
-  const [framework, setFramework] = useState<"yolo" | "mediapipe">("yolo")
-  const [model, setModel] = useState<string>("yolov8")
-
-  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false)
-  const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null)
-
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-
-  const uploadVideoForProcessing = async () => {
-    if (!videoFile) return
-
-    const formData = new FormData()
-    formData.append("file", videoFile)
-    formData.append("tecnologia", framework)
-   
-    try {
-      const response = await fetch("http://localhost:8000/upload/", {
-        method: "POST",
-        body: formData,
-      })
-
-
-      if (!response.ok) throw new Error("Error al procesar el video")
-
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      setProcessedVideoUrl(url)
-
-      // reproducir automáticamente
-      if (videoRef.current) {
-        videoRef.current.src = url
-        videoRef.current.play()
+  // Cargar modelos disponibles
+  useEffect(() => {
+    const loadModels = async () => {
+      setIsLoadingModels(true);
+      try {
+        const endpoint = framework === "yolo" 
+          ? "http://localhost:8000/modelos/yolo" 
+          : "http://localhost:8000/modelos/mediapipe";
+        
+        const response = await fetch(endpoint);
+        if (!response.ok) throw new Error("Error al cargar modelos");
+        
+        const data = await response.json();
+        setModelOptions(prev => ({
+          ...prev,
+          [framework]: data.modelos || []
+        }));
+        
+        if (data.modelos?.length > 0) {
+          setModel(data.modelos[0]);
+        }
+      } catch (error) {
+        console.error("Error al cargar modelos:", error);
+        setModelOptions({
+          yolo: ['yolo11n.pt', 'yolo11s.pt', 'yolo11m.pt', 'yolo11l.pt', 'yolo11x.pt'],
+          mediapipe: ["efficientdet_lite0_pf32.tflite","efficientdet_lite0_int8.tflite", "efficientdet_lite0_pf16.tflite", "ssd_mobilenet_v2_int8.tflite", "ssd_mobilenet_v2_pf32.tflite" ]
+        });
+      } finally {
+        setIsLoadingModels(false);
       }
-    } catch (error) {
-      console.error("Error:", error)
-    }
-  }
+    };
+
+    loadModels();
+  }, [framework]);
+
+  // Limpiar resultados al cambiar fuente de video
+  useEffect(() => {
+    setProcessedVideoUrl(null);
+    setIsAnalyzing(false);
+  }, [videoSource]);
+
+  // Limpiar resultados al cambiar archivo
+  useEffect(() => {
+    setProcessedVideoUrl(null);
+    setIsAnalyzing(false);
+  }, [videoFile]);
 
   const toggleAnalysis = () => {
-    if (!isAnalyzing && videoSource === "file") {
-      uploadVideoForProcessing()
+    if (isAnalyzing) {
+      // Detener análisis (tanto para webcam como para archivos)
+      setIsAnalyzing(false);
+    } else {
+      // Iniciar análisis
+      setIsAnalyzing(true);
     }
-    setIsAnalyzing(!isAnalyzing)
-  }
+  };
 
-  const handleAnalysisComplete = (isAnalyzing: boolean) => {
-    setIsAnalyzing(isAnalyzing)
-  }
+  const handleProcessingComplete = (url: string) => {
+    setProcessedVideoUrl(url);
+    setIsAnalyzing(false);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50">
@@ -67,11 +88,15 @@ export default function App() {
           <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 text-transparent bg-clip-text">
             Analizador de Video con IA
           </h1>
-          <p className="text-gray-600 mt-2">Analiza videos o transmisiones de webcam con modelos de IA avanzados</p>
+          <p className="text-gray-600 mt-2">
+            Analiza videos o transmisiones de webcam con modelos de IA avanzados
+          </p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Panel de control izquierdo */}
           <div className="lg:col-span-1 space-y-6">
+            {/* Selección de fuente de video */}
             <Card className="overflow-hidden border-none shadow-lg bg-white">
               <div className="bg-gradient-to-r from-purple-500 to-indigo-600 py-3 px-4">
                 <h2 className="text-white font-semibold flex items-center">
@@ -80,63 +105,78 @@ export default function App() {
                 </h2>
               </div>
               <CardContent className="pt-6">
-                <VideoSource videoSource={videoSource} setVideoSource={setVideoSource} setVideoFile={setVideoFile} />
+                <VideoSource
+                  videoSource={videoSource}
+                  setVideoSource={setVideoSource}
+                  setVideoFile={setVideoFile}
+                />
               </CardContent>
             </Card>
 
+            {/* Selección de modelo */}
             <Card className="overflow-hidden border-none shadow-lg bg-white">
               <div className="bg-gradient-to-r from-pink-500 to-rose-500 py-3 px-4">
                 <h2 className="text-white font-semibold flex items-center">
                   <Film className="mr-2 h-5 w-5" />
-                  Selección de la tecnología
+                  Configuración de Análisis
                 </h2>
               </div>
               <CardContent className="pt-6">
-                <ModelSelector framework={framework} setFramework={setFramework} model={model} setModel={setModel} />
+                <ModelSelector
+                  framework={framework}
+                  setFramework={setFramework}
+                  model={model}
+                  setModel={setModel}
+                  modelOptions={modelOptions}
+                  isLoading={isLoadingModels}
+                />
               </CardContent>
             </Card>
 
+            {/* Botón de análisis */}
             <Button
               className="w-full py-6 text-lg shadow-lg transition-all duration-300 hover:scale-105"
               size="lg"
               onClick={toggleAnalysis}
+              disabled={
+                isLoadingModels || 
+                (videoSource === "file" && !videoFile) || 
+                !model
+              }
               variant={isAnalyzing ? "destructive" : "default"}
-              style={{
-                background: isAnalyzing
-                  ? "linear-gradient(to right, #f43f5e, #ef4444)"
-                  : "linear-gradient(to right, #8b5cf6, #3b82f6)",
-              }}
             >
               {isAnalyzing ? (
                 <>
-                  <Square className="mr-2 h-5 w-5" /> Detener Análisis
+                  <Square className="mr-2 h-5 w-5" /> 
+                  Detener Análisis
                 </>
               ) : (
                 <>
-                  <Play className="mr-2 h-5 w-5" /> Iniciar Análisis
+                  <Play className="mr-2 h-5 w-5" /> 
+                  Iniciar Análisis
                 </>
               )}
             </Button>
           </div>
 
+          {/* Panel de visualización derecha */}
           <div className="lg:col-span-3">
             <Card className="overflow-hidden border-none shadow-xl bg-white">
               <div className="bg-gradient-to-r from-blue-500 to-cyan-500 py-3 px-4">
-                <h2 className="text-white font-semibold">Vista Previa del Análisis</h2>
+                <h2 className="text-white font-semibold">
+                  {processedVideoUrl ? "Resultado del Análisis" : 
+                   isAnalyzing ? "Análisis en Tiempo Real" : "Vista Previa"}
+                </h2>
               </div>
-              <CardContent className="p-0">
+              <CardContent className="p-0 aspect-video">
                 <VideoDisplay
-                  videoRef={videoRef}
-                  canvasRef={canvasRef}
                   videoSource={videoSource}
                   videoFile={videoFile}
                   isAnalyzing={isAnalyzing}
                   framework={framework}
                   model={model}
-                  fps={30}
-                  resolution={"720p"}
-                  onAnalysisComplete={handleAnalysisComplete}
-                  videoUrl={processedVideoUrl} // NUEVO
+                  onProcessingComplete={handleProcessingComplete}
+                  processedUrl={processedVideoUrl}
                 />
               </CardContent>
             </Card>
@@ -144,5 +184,5 @@ export default function App() {
         </div>
       </div>
     </div>
-  )
+  );
 }
