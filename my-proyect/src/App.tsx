@@ -67,14 +67,15 @@ export default function App() {
   }, [videoFile]);
 
   const toggleAnalysis = () => {
-    if (isAnalyzing) {
-      // Detener análisis (tanto para webcam como para archivos)
-      setIsAnalyzing(false);
-    } else {
-      // Iniciar análisis
-      setIsAnalyzing(true);
-    }
-  };
+  if (isAnalyzing) {
+    // Detener análisis (ahora funciona para ambos casos)
+    setIsAnalyzing(false);
+  } else {
+    // Iniciar análisis
+    setIsAnalyzing(true);
+    setProcessedVideoUrl(null); // Resetear resultado previo
+  }
+};
 
   const handleProcessingComplete = (url: string) => {
     setProcessedVideoUrl(url);
@@ -135,7 +136,7 @@ export default function App() {
 
             {/* Botón de análisis */}
             <Button
-              className="w-full py-6 text-lg shadow-lg transition-all duration-300 hover:scale-105"
+              className="w-full py-6 text-lg shadow-lg transition-all duration-300 hover:scale-105 bg-blue-600 text-black hover:bg-blue-700"
               size="lg"
               onClick={toggleAnalysis}
               disabled={
@@ -143,7 +144,6 @@ export default function App() {
                 (videoSource === "file" && !videoFile) || 
                 !model
               }
-              variant={isAnalyzing ? "destructive" : "default"}
             >
               {isAnalyzing ? (
                 <>

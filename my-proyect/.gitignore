@@ -9,10 +9,6 @@ lerna-debug.log*
 
 # Ignorar node_modules y todo su contenido
 node_modules/
-
-my-proyect\node_modules\@types\node
-node_modules\@types\node
-node_modules\.prisma
 dist
 dist-ssr
 *.local
