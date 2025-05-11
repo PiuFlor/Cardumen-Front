@@ -29,13 +29,10 @@ export default function VideoDisplay({
   const streamRef = useRef<MediaStream | null>(null)
   const frameIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // 1. Configuración de la cámara web
   const startWebcam = async () => {
     try {
       setStatus("Iniciando cámara...")
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: true
-      })
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
       streamRef.current = stream
 
       if (videoRef.current) {
@@ -54,11 +51,10 @@ export default function VideoDisplay({
     }
   }
 
-  // 2. Conexión WebSocket para análisis en tiempo real
   const connectWebSocket = () => {
     setStatus("Conectando al servidor...")
     const ws = new WebSocket(
-      `ws://127.0.0.1:8000/ws/image?tecnologia=${framework}&modelo=${model}`
+      `ws://localhost:8000/ws/image?tecnologia=${framework}&modelo=${model}`
     )
     wsRef.current = ws
 
@@ -84,7 +80,6 @@ export default function VideoDisplay({
     }
   }
 
-  // 3. Procesamiento de frames
   const startFrameProcessing = () => {
     if (!frameIntervalRef.current) {
       frameIntervalRef.current = setInterval(sendFrame, 100)
@@ -124,58 +119,40 @@ export default function VideoDisplay({
     }
   }
 
-  // 4. Procesamiento de archivos con seguimiento de estado
   const processFile = async () => {
-    setIsProcessing(true)
-    setStatus("Procesando archivo...")
+    setIsProcessing(true);
+    setStatus("Procesando archivo...");
     
-    const formData = new FormData()
-    formData.append('file', videoFile!)
-    formData.append('tecnologia', framework)
-    formData.append('modelo', model)
+    const formData = new FormData();
+    formData.append('file', videoFile!);
+    formData.append('tecnologia', framework);
+    formData.append('modelo', model);
 
     try {
         const response = await fetch('http://localhost:8000/upload/video', {
             method: 'POST',
             body: formData,
-        })
+        });
 
-        if (!response.ok) throw new Error('Error al procesar el archivo')
+        if (!response.ok) throw new Error('Error al procesar el archivo');
 
-        const { task_id } = await response.json()
+        // Crear URL del blob directamente desde la respuesta
+        const blob = await response.blob();
+        const videoUrl = URL.createObjectURL(blob);
         
-        // Conectar WebSocket para progreso
-        const ws = new WebSocket(`ws://localhost:8000/ws/progress/${task_id}`)
-        
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data)
-            
-            if (data.type === "frame" && processedImageRef.current) {
-                processedImageRef.current.src = `data:image/jpeg;base64,${data.frame}`
-                setStatus(`Procesando... ${Math.round(data.progress)}%`)
-            }
-            
-            if (data.type === "complete" && onProcessingComplete) {
-                onProcessingComplete(`http://localhost:8000/video/${data.output_path}`)
-                ws.close()
-                setIsProcessing(false)
-            }
+        if (onProcessingComplete) {
+            onProcessingComplete(videoUrl);
         }
         
-        ws.onerror = (error) => {
-            console.error('WebSocket error:', error)
-            setStatus('Error en la conexión')
-            setIsProcessing(false)
-        }
-        
+        setStatus("Procesamiento completado");
     } catch (error) {
-        console.error('Error procesando archivo:', error)
-        setStatus('Error al procesar el archivo')
-        setIsProcessing(false)
+        console.error('Error procesando archivo:', error);
+        setStatus('Error al procesar el archivo');
+    } finally {
+        setIsProcessing(false);
     }
-}
+};
 
-  // 5. Detener todo el análisis
   const stopAnalysis = () => {
     if (videoSource === "webcam") {
       stopFrameProcessing()
@@ -186,7 +163,6 @@ export default function VideoDisplay({
     }
   }
 
-  // Efectos principales
   useEffect(() => {
     if (videoSource === "webcam" && !processedUrl) {
       startWebcam()
@@ -216,22 +192,19 @@ export default function VideoDisplay({
 
   return (
     <div className="relative w-full h-full bg-black rounded-lg overflow-hidden">
-      {/* Video procesado (tiene prioridad si existe) */}
-      {processedUrl && videoSource === "file" && (
+      {processedUrl ? (
         <video
+          key={processedUrl}
           src={processedUrl}
           className="w-full h-full object-contain"
           controls
           muted
           playsInline
           autoPlay
+          onError={() => setStatus("Error al cargar video")}
         />
-      )}
-
-      {/* Contenido de vista previa y análisis (solo si no hay resultado procesado) */}
-      {(!processedUrl || videoSource === "webcam") && (
+      ) : (
         <>
-          {/* Video de la cámara (solo vista previa) */}
           <video
             ref={videoRef}
             autoPlay
@@ -241,8 +214,6 @@ export default function VideoDisplay({
               isAnalyzing && videoSource === "webcam" ? 'hidden' : 'block'
             }`}
           />
-          
-          {/* Imagen procesada (durante análisis de webcam) */}
           <img
             ref={processedImageRef}
             alt="Procesado"
@@ -253,30 +224,26 @@ export default function VideoDisplay({
         </>
       )}
       
-      {/* Mensaje de procesamiento */}
       {isProcessing && (
         <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70">
           <div className="text-white text-center p-4 rounded-lg">
             <div className="animate-pulse text-xl mb-2">Procesando...</div>
-            <div className="text-sm">Por favor espera mientras se procesa el video</div>
+            <div className="text-sm">{status}</div>
           </div>
         </div>
       )}
       
-      {/* Canvas oculto para procesamiento */}
-      <canvas ref={canvasRef} className="hidden" />
-      
-      {/* Estado */}
       <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-3 py-1 rounded-md text-sm">
         {status}
       </div>
       
-      {/* Modelo activo */}
       {isAnalyzing && (
         <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white px-3 py-1 rounded-md text-sm">
           {framework} - {model}
         </div>
       )}
+      
+      <canvas ref={canvasRef} className="hidden" />
     </div>
   )
 }

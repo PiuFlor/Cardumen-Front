@@ -7,7 +7,12 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules\
+# Ignorar node_modules y todo su contenido
+node_modules/
+
+my-proyect\node_modules\@types\node
+node_modules\@types\node
+node_modules\.prisma
 dist
 dist-ssr
 *.local
