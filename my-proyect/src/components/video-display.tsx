@@ -118,50 +118,68 @@ export default function VideoDisplay({
       }
     }
   }
+  const abortControllerRef = useRef<AbortController | null>(null);
+  // Agrega esta variable ref al inicio del componente
 
-  const processFile = async () => {
-    setIsProcessing(true);
-    setStatus("Procesando archivo...");
-    
-    const formData = new FormData();
-    formData.append('file', videoFile!);
-    formData.append('tecnologia', framework);
-    formData.append('modelo', model);
 
-    try {
-        const response = await fetch('http://localhost:8000/upload/video', {
-            method: 'POST',
-            body: formData,
-        });
+const processFile = async () => {
+  setIsProcessing(true);
+  setStatus("Procesando archivo...");
+  
+  // Crear nuevo AbortController para esta solicitud
+  abortControllerRef.current = new AbortController();
+  
+  const formData = new FormData();
+  formData.append('file', videoFile!);
+  formData.append('tecnologia', framework);
+  formData.append('modelo', model);
 
-        if (!response.ok) throw new Error('Error al procesar el archivo');
+  try {
+      const response = await fetch('http://localhost:8000/upload/video', {
+          method: 'POST',
+          body: formData,
+          signal: abortControllerRef.current.signal, // Conectar el abort signal
+      });
 
-        // Crear URL del blob directamente desde la respuesta
-        const blob = await response.blob();
-        const videoUrl = URL.createObjectURL(blob);
-        
-        if (onProcessingComplete) {
-            onProcessingComplete(videoUrl);
-        }
-        
-        setStatus("Procesamiento completado");
-    } catch (error) {
-        console.error('Error procesando archivo:', error);
-        setStatus('Error al procesar el archivo');
-    } finally {
-        setIsProcessing(false);
-    }
+      if (!response.ok) throw new Error('Error al procesar el archivo');
+
+      const blob = await response.blob();
+      const videoUrl = URL.createObjectURL(blob);
+      
+      if (onProcessingComplete) {
+          onProcessingComplete(videoUrl);
+      }
+      
+      setStatus("Procesamiento completado");
+  } catch (error) {
+      if (error instanceof Error && error.name !== 'AbortError') {
+          console.error('Error procesando archivo:', error);
+          setStatus('Error al procesar el archivo');
+      } else {
+          setStatus("Procesamiento cancelado");
+      }
+  } finally {
+      setIsProcessing(false);
+      abortControllerRef.current = null;
+  }
 };
 
-  const stopAnalysis = () => {
-    if (videoSource === "webcam") {
-      stopFrameProcessing()
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
-      setStatus("Análisis detenido")
+const stopAnalysis = () => {
+  if (videoSource === "webcam") {
+    stopFrameProcessing()
+    if (wsRef.current) {
+      wsRef.current.close()
     }
+    setStatus("Análisis detenido")
+  } else if (videoSource === "file") {
+    // Cancelar la solicitud de archivo si existe
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setIsProcessing(false);
+    setStatus("Procesamiento cancelado");
   }
+}
 
   useEffect(() => {
     if (videoSource === "webcam" && !processedUrl) {
