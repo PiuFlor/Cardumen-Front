@@ -26,8 +26,12 @@ export default function VideoDisplay({
   const [status, setStatus] = useState("Presiona 'Iniciar Análisis'")
   const [isProcessing, setIsProcessing] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
+  const wsFileRef = useRef<WebSocket | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const frameIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const abortControllerRef = useRef<AbortController | null>(null)
+  const [frameKey, setFrameKey] = useState(0)
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
 
   const startWebcam = async () => {
     try {
@@ -118,68 +122,139 @@ export default function VideoDisplay({
       }
     }
   }
-  const abortControllerRef = useRef<AbortController | null>(null);
-  // Agrega esta variable ref al inicio del componente
 
+  const connectFileWebSocket = (taskId: string) => {
+    setCurrentTaskId(taskId)
+    setStatus("Conectando para procesar archivo...")
+    
+    const ws = new WebSocket(`ws://localhost:8000/ws/progress/${taskId}`)
+    wsFileRef.current = ws
 
-const processFile = async () => {
-  setIsProcessing(true);
-  setStatus("Procesando archivo...");
-  
-  // Crear nuevo AbortController para esta solicitud
-  abortControllerRef.current = new AbortController();
-  
-  const formData = new FormData();
-  formData.append('file', videoFile!);
-  formData.append('tecnologia', framework);
-  formData.append('modelo', model);
+    ws.onopen = () => {
+      setStatus("Procesando archivo...")
+    }
 
-  try {
-      const response = await fetch('http://localhost:8000/upload/video', {
-          method: 'POST',
-          body: formData,
-          signal: abortControllerRef.current.signal, // Conectar el abort signal
-      });
-
-      if (!response.ok) throw new Error('Error al procesar el archivo');
-
-      const blob = await response.blob();
-      const videoUrl = URL.createObjectURL(blob);
-      
-      if (onProcessingComplete) {
-          onProcessingComplete(videoUrl);
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        
+        if (data.type === 'frame' && processedImageRef.current) {
+          processedImageRef.current.src = `data:image/jpeg;base64,${data.frame}`
+          setFrameKey(prev => prev + 1)
+          setStatus(`Procesando: ${Math.round(data.progress)}%`)
+        }
+        
+        if (data.type === 'complete' && onProcessingComplete) {
+          const videoUrl = `http://localhost:8000/video/${data.output_path}`
+          onProcessingComplete(videoUrl)
+          setStatus("Procesamiento completado")
+          setCurrentTaskId(null)
+        }
+        
+        if (data.type === 'error') {
+          setStatus(`Error: ${data.message}`)
+          setCurrentTaskId(null)
+        }
+        
+        if (data.type === 'cancelled') {
+          setStatus("Procesamiento cancelado")
+          setCurrentTaskId(null)
+        }
+      } catch (e) {
+        console.error("Error procesando mensaje WebSocket:", e)
       }
+    }
+
+    ws.onclose = () => {
+      if (status !== "Procesamiento completado" && status !== "Procesamiento cancelado") {
+        setStatus("Conexión cerrada")
+      }
+      setCurrentTaskId(null)
+    }
+
+    ws.onerror = (error) => {
+      console.error("Error en WebSocket:", error)
+      setStatus("Error en la conexión")
+      setCurrentTaskId(null)
+    }
+  }
+
+  const processFile = async () => {
+    setIsProcessing(true)
+    setStatus("Procesando archivo...")
+    
+    abortControllerRef.current = new AbortController()
+    
+    const formData = new FormData()
+    formData.append('file', videoFile!)
+    formData.append('tecnologia', framework)
+    formData.append('modelo', model)
+
+    try {
+      // 1. Subir archivo y obtener task_id
+      const uploadResponse = await fetch('http://localhost:8000/upload', {
+        method: 'POST',
+        body: formData,
+        signal: abortControllerRef.current.signal,
+      })
+
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json().catch(() => ({}))
+        throw new Error(errorData.error || 'Error al subir el archivo')
+      }
+
+      const { task_id } = await uploadResponse.json()
       
-      setStatus("Procesamiento completado");
-  } catch (error) {
+      // 2. Conectar WebSocket para progreso
+      connectFileWebSocket(task_id)
+
+    } catch (error) {
       if (error instanceof Error && error.name !== 'AbortError') {
-          console.error('Error procesando archivo:', error);
-          setStatus('Error al procesar el archivo');
+        console.error('Error procesando archivo:', error)
+        setStatus(error.message || 'Error al procesar el archivo')
       } else {
-          setStatus("Procesamiento cancelado");
+        setStatus("Procesamiento cancelado")
       }
-  } finally {
-      setIsProcessing(false);
-      abortControllerRef.current = null;
+    } finally {
+      setIsProcessing(false)
+      abortControllerRef.current = null
+    }
   }
-};
 
-const stopAnalysis = () => {
-  if (videoSource === "webcam") {
-    stopFrameProcessing()
-    if (wsRef.current) {
-      wsRef.current.close()
+  const stopAnalysis = async () => {
+    if (videoSource === "webcam") {
+      stopFrameProcessing()
+      if (wsRef.current) {
+        wsRef.current.close()
+      }
+      setStatus("Análisis detenido")
+    } else if (videoSource === "file") {
+      // Cancelar WebSocket si existe
+      if (wsFileRef.current) {
+        wsFileRef.current.close()
+      }
+      
+      // Cancelar fetch si existe
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+      
+      // Cancelar tarea en el backend si existe
+      if (currentTaskId) {
+        try {
+          await fetch(`http://localhost:8000/cancel/${currentTaskId}`, {
+            method: 'POST'
+          })
+        } catch (e) {
+          console.error("Error cancelando tarea en backend:", e)
+        }
+      }
+      
+      setIsProcessing(false)
+      setStatus("Procesamiento cancelado")
+      setCurrentTaskId(null)
     }
-    setStatus("Análisis detenido")
-  } else if (videoSource === "file") {
-    // Cancelar la solicitud de archivo si existe
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    setIsProcessing(false);
-    setStatus("Procesamiento cancelado");
   }
-}
 
   useEffect(() => {
     if (videoSource === "webcam" && !processedUrl) {
@@ -229,14 +304,15 @@ const stopAnalysis = () => {
             playsInline
             muted
             className={`w-full h-full object-contain ${
-              isAnalyzing && videoSource === "webcam" ? 'hidden' : 'block'
+              isAnalyzing ? 'hidden' : 'block'
             }`}
           />
           <img
+            key={frameKey}
             ref={processedImageRef}
             alt="Procesado"
             className={`w-full h-full object-contain ${
-              isAnalyzing && videoSource === "webcam" ? 'block' : 'hidden'
+              isAnalyzing ? 'block' : 'hidden'
             }`}
           />
         </>
