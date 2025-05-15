@@ -1,5 +1,6 @@
+
 "use client"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useCallback } from "react"
 
 interface VideoDisplayProps {
   videoSource: "file" | "webcam"
@@ -22,7 +23,7 @@ export default function VideoDisplay({
 }: VideoDisplayProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const processedImageRef = useRef<HTMLImageElement>(null)
+  const processedCanvasRef = useRef<HTMLCanvasElement>(null)
   const [status, setStatus] = useState("Presiona 'Iniciar Análisis'")
   const [isProcessing, setIsProcessing] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
@@ -30,13 +31,23 @@ export default function VideoDisplay({
   const streamRef = useRef<MediaStream | null>(null)
   const frameIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
-  const [frameKey, setFrameKey] = useState(0)
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
+  
+  // Buffer para almacenar frames procesados
+  const frameBufferRef = useRef<{timestamp: number, image: string}[]>([])
+  const lastRenderTimeRef = useRef<number>(0)
+  const renderRequestRef = useRef<number | null>(null)
 
   const startWebcam = async () => {
     try {
       setStatus("Iniciando cámara...")
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          width: { ideal: 640 }, 
+          height: { ideal: 480 },
+          frameRate: { ideal: 30 }
+        } 
+      })
       streamRef.current = stream
 
       if (videoRef.current) {
@@ -55,6 +66,37 @@ export default function VideoDisplay({
     }
   }
 
+  // Función para renderizar frames de manera suave
+  const renderProcessedFrames = useCallback(() => {
+    const now = performance.now()
+    const canvas = processedCanvasRef.current
+    if (!canvas) return
+    
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    
+    // Si hay frames en el buffer y ha pasado suficiente tiempo desde el último renderizado
+    if (frameBufferRef.current.length > 0 && now - lastRenderTimeRef.current >= 16) { // ~60fps
+      const nextFrame = frameBufferRef.current.shift()
+      if (nextFrame) {
+        const img = new Image()
+        img.onload = () => {
+          // Ajustar tamaño del canvas si es necesario
+          if (canvas.width !== img.width || canvas.height !== img.height) {
+            canvas.width = img.width
+            canvas.height = img.height
+          }
+          ctx.clearRect(0, 0, canvas.width, canvas.height)
+          ctx.drawImage(img, 0, 0)
+        }
+        img.src = `data:image/jpeg;base64,${nextFrame.image}`
+        lastRenderTimeRef.current = now
+      }
+    }
+    
+    renderRequestRef.current = requestAnimationFrame(renderProcessedFrames)
+  }, [])
+
   const connectWebSocket = () => {
     setStatus("Conectando al servidor...")
     const ws = new WebSocket(
@@ -64,18 +106,31 @@ export default function VideoDisplay({
 
     ws.onopen = () => {
       setStatus("Analizando en tiempo real...")
+      frameBufferRef.current = [] // Limpiar buffer
       startFrameProcessing()
+      renderRequestRef.current = requestAnimationFrame(renderProcessedFrames)
     }
 
     ws.onmessage = (event) => {
-      if (processedImageRef.current) {
-        processedImageRef.current.src = `data:image/jpeg;base64,${event.data}`
+      // Agregar frame al buffer con timestamp
+      frameBufferRef.current.push({
+        timestamp: performance.now(),
+        image: event.data
+      })
+      
+      // Limitar tamaño del buffer para evitar uso excesivo de memoria
+      if (frameBufferRef.current.length > 30) {
+        frameBufferRef.current = frameBufferRef.current.slice(-20)
       }
     }
 
     ws.onclose = () => {
       setStatus("Conexión cerrada")
       stopFrameProcessing()
+      if (renderRequestRef.current) {
+        cancelAnimationFrame(renderRequestRef.current)
+        renderRequestRef.current = null
+      }
     }
 
     ws.onerror = (error) => {
@@ -86,7 +141,8 @@ export default function VideoDisplay({
 
   const startFrameProcessing = () => {
     if (!frameIntervalRef.current) {
-      frameIntervalRef.current = setInterval(sendFrame, 100)
+      // Aumentar la frecuencia a 30fps (33ms entre frames)
+      frameIntervalRef.current = setInterval(sendFrame, 33)
     }
   }
 
@@ -108,6 +164,7 @@ export default function VideoDisplay({
         canvas.height = video.videoHeight
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
         
+        // Optimizar calidad/tamaño para transmisión más rápida
         canvas.toBlob((blob) => {
           if (!blob) return
           const reader = new FileReader()
@@ -118,7 +175,7 @@ export default function VideoDisplay({
             }
           }
           reader.readAsDataURL(blob)
-        }, 'image/jpeg')
+        }, 'image/jpeg', 0.85) // Calidad 0.85 para balance entre calidad y tamaño
       }
     }
   }
@@ -132,15 +189,26 @@ export default function VideoDisplay({
 
     ws.onopen = () => {
       setStatus("Procesando archivo...")
+      frameBufferRef.current = [] // Limpiar buffer
+      renderRequestRef.current = requestAnimationFrame(renderProcessedFrames)
     }
 
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
         
-        if (data.type === 'frame' && processedImageRef.current) {
-          processedImageRef.current.src = `data:image/jpeg;base64,${data.frame}`
-          setFrameKey(prev => prev + 1)
+        if (data.type === 'frame') {
+          // Agregar frame al buffer
+          frameBufferRef.current.push({
+            timestamp: performance.now(),
+            image: data.frame
+          })
+          
+          // Limitar tamaño del buffer
+          if (frameBufferRef.current.length > 30) {
+            frameBufferRef.current = frameBufferRef.current.slice(-20)
+          }
+          
           setStatus(`Procesando: ${Math.round(data.progress)}%`)
         }
         
@@ -149,16 +217,28 @@ export default function VideoDisplay({
           onProcessingComplete(videoUrl)
           setStatus("Procesamiento completado")
           setCurrentTaskId(null)
+          if (renderRequestRef.current) {
+            cancelAnimationFrame(renderRequestRef.current)
+            renderRequestRef.current = null
+          }
         }
         
         if (data.type === 'error') {
           setStatus(`Error: ${data.message}`)
           setCurrentTaskId(null)
+          if (renderRequestRef.current) {
+            cancelAnimationFrame(renderRequestRef.current)
+            renderRequestRef.current = null
+          }
         }
         
         if (data.type === 'cancelled') {
           setStatus("Procesamiento cancelado")
           setCurrentTaskId(null)
+          if (renderRequestRef.current) {
+            cancelAnimationFrame(renderRequestRef.current)
+            renderRequestRef.current = null
+          }
         }
       } catch (e) {
         console.error("Error procesando mensaje WebSocket:", e)
@@ -170,6 +250,10 @@ export default function VideoDisplay({
         setStatus("Conexión cerrada")
       }
       setCurrentTaskId(null)
+      if (renderRequestRef.current) {
+        cancelAnimationFrame(renderRequestRef.current)
+        renderRequestRef.current = null
+      }
     }
 
     ws.onerror = (error) => {
@@ -181,7 +265,7 @@ export default function VideoDisplay({
 
   const processFile = async () => {
     setIsProcessing(true)
-    setStatus("Procesando archivo...")
+    setStatus("Preparando archivo...")
     
     abortControllerRef.current = new AbortController()
     
@@ -254,6 +338,13 @@ export default function VideoDisplay({
       setStatus("Procesamiento cancelado")
       setCurrentTaskId(null)
     }
+    
+    // Limpiar buffer y cancelar renderizado
+    frameBufferRef.current = []
+    if (renderRequestRef.current) {
+      cancelAnimationFrame(renderRequestRef.current)
+      renderRequestRef.current = null
+    }
   }
 
   useEffect(() => {
@@ -307,10 +398,9 @@ export default function VideoDisplay({
               isAnalyzing ? 'hidden' : 'block'
             }`}
           />
-          <img
-            key={frameKey}
-            ref={processedImageRef}
-            alt="Procesado"
+          {/* Canvas para renderizado fluido en lugar de la imagen */}
+          <canvas
+            ref={processedCanvasRef}
             className={`w-full h-full object-contain ${
               isAnalyzing ? 'block' : 'hidden'
             }`}
