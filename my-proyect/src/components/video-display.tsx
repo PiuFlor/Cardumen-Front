@@ -145,7 +145,7 @@ export default function VideoDisplay({
         }
         
         if (data.type === 'complete' && onProcessingComplete) {
-          const videoUrl = `http://localhost:8000/video/${data.output_path}`
+          const videoUrl = `http://localhost:8000/${data.output_path}`
           onProcessingComplete(videoUrl)
           setStatus("Procesamiento completado")
           setCurrentTaskId(null)
