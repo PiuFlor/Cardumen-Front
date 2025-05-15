@@ -5,6 +5,7 @@ import VideoDisplay from "./components/video-display";
 import { Button } from "./components/ui/button";
 import { Card, CardContent } from "./components/ui/card";
 import { Camera, Film, Play, Square } from "lucide-react";
+import ResultsModal from "./components/results-modal";
 
 export default function App() {
   const [videoSource, setVideoSource] = useState<"file" | "webcam">("webcam");
@@ -13,6 +14,8 @@ export default function App() {
   const [model, setModel] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
+  const [showResultsModal, setShowResultsModal] = useState(false);
+  const [taskId, setTaskId] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState({
     yolo: ['yolo11n.pt', 'yolo11s.pt', 'yolo11m.pt', 'yolo11l.pt', 'yolo11x.pt'],
     mediapipe: ["efficientdet_lite0_pf32.tflite","efficientdet_lite0_int8.tflite", "efficientdet_lite0_pf16.tflite", "ssd_mobilenet_v2_int8.tflite", "ssd_mobilenet_v2_pf32.tflite" ]
@@ -58,28 +61,31 @@ export default function App() {
   useEffect(() => {
     setProcessedVideoUrl(null);
     setIsAnalyzing(false);
+    setShowResultsModal(false);
   }, [videoSource]);
 
   // Limpiar resultados al cambiar archivo
   useEffect(() => {
     setProcessedVideoUrl(null);
     setIsAnalyzing(false);
+    setShowResultsModal(false);
   }, [videoFile]);
 
   const toggleAnalysis = () => {
-  if (isAnalyzing) {
-    // Detener análisis (ahora funciona para ambos casos)
-    setIsAnalyzing(false);
-  } else {
-    // Iniciar análisis
-    setIsAnalyzing(true);
-    setProcessedVideoUrl(null); // Resetear resultado previo
-  }
-};
+    if (isAnalyzing) {
+      setIsAnalyzing(false);
+    } else {
+      setIsAnalyzing(true);
+      setProcessedVideoUrl(null);
+      setShowResultsModal(false);
+    }
+  };
 
-  const handleProcessingComplete = (url: string) => {
+  const handleProcessingComplete = (url: string, taskId: string) => {
     setProcessedVideoUrl(url);
     setIsAnalyzing(false);
+    setTaskId(taskId);
+    setShowResultsModal(true);
   };
 
   return (
@@ -183,6 +189,15 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      <ResultsModal
+        isOpen={showResultsModal}
+        onClose={() => setShowResultsModal(false)}
+        videoFile={videoFile?.name || null}
+        framework={framework}
+        model={model}
+        taskId={taskId}
+      />
     </div>
   );
 }
