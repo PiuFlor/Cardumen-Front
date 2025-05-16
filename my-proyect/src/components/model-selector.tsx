@@ -1,9 +1,28 @@
-"use client"
+"use client";
 
+import { useState } from "react";
 import { Label } from "./ui/label";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Box, Layers, Loader2 } from "lucide-react";
+
+const mediapipeModelInfo = [
+  { name: "efficientdet_lite0_int8.tflite", speed: 3, accuracy: 5 },
+  { name: "efficientdet_lite0_pf16.tflite", speed: 4, accuracy: 4 },
+  { name: "efficientdet_lite0_pf32.tflite", speed: 5, accuracy: 3 },
+  { name: "ssd_mobilenet_v2_int8.tflite", speed: 1, accuracy: 7 },
+  { name: "ssd_mobilenet_v2_pf32.tflite", speed: 2, accuracy: 6 },
+  { name: "efficientdet_lite2_int8.tflite", speed: 6, accuracy: 2 },
+  { name: "efficientdet_lite2_pf32.tflite", speed: 7, accuracy: 1 }
+];
+
+const yoloModelInfo = [
+  { name: "yolo11n.pt", speed: 1, accuracy: 5 },
+  { name: "yolo11s.pt", speed: 2, accuracy: 4 },
+  { name: "yolo11m.pt", speed: 3, accuracy: 3 },
+  { name: "yolo11l.pt", speed: 4, accuracy: 2 },
+  { name: "yolo11x.pt", speed: 5, accuracy: 1 }
+];
 
 interface ModelSelectorProps {
   framework: "yolo" | "mediapipe";
@@ -25,7 +44,42 @@ export default function ModelSelector({
   modelOptions,
   isLoading = false,
 }: ModelSelectorProps) {
-  const currentModels = modelOptions[framework] || [];
+  const [orden, setOrden] = useState<"rapidez" | "precision">("rapidez");
+
+  let currentModels = modelOptions[framework] || [];
+
+  if (framework === "yolo") {
+    const modelInfoMap = Object.fromEntries(
+      yoloModelInfo.map((m) => [m.name, m])
+    );
+
+    currentModels = [...currentModels].sort((a, b) => {
+      const aInfo = modelInfoMap[a];
+      const bInfo = modelInfoMap[b];
+      if (!aInfo || !bInfo) return 0;
+
+      return orden === "rapidez"
+        ? aInfo.speed - bInfo.speed
+        : aInfo.accuracy - bInfo.accuracy;  
+    });
+  }
+
+  
+  if (framework === "mediapipe") {
+    const modelInfoMap = Object.fromEntries(
+      mediapipeModelInfo.map((m) => [m.name, m])
+    );
+
+    currentModels = [...currentModels].sort((a, b) => {
+      const aInfo = modelInfoMap[a];
+      const bInfo = modelInfoMap[b];
+      if (!aInfo || !bInfo) return 0;
+
+      return orden === "rapidez"
+        ? aInfo.speed - bInfo.speed
+        : aInfo.accuracy - bInfo.accuracy;
+    });
+  }
 
   return (
     <div className="space-y-4">
@@ -51,45 +105,61 @@ export default function ModelSelector({
         </div>
       </RadioGroup>
 
-      <div className="pt-2">
-        <Label htmlFor="model-select" className="block mb-2 text-gray-700">
-          Modelo Específico
-        </Label>
-        {isLoading ? (
-          <div className="flex items-center justify-center p-4 border-2 border-pink-200 rounded-md bg-white">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
-            <span>Cargando modelos...</span>
-          </div>
-        ) : (
-          <Select 
-            value={model} 
-            onValueChange={setModel}
-            disabled={currentModels.length === 0}
-          >
-            <SelectTrigger 
-              id="model-select" 
-              className="border-2 border-pink-200 focus:border-pink-500 bg-white"
-            >
-              <SelectValue 
-                placeholder={currentModels.length === 0 ? "No hay modelos disponibles" : "Selecciona un modelo"} 
-              />
-            </SelectTrigger>
-            {currentModels.length > 0 && (
-              <SelectContent className="bg-white border-pink-200">
-                {currentModels.map((modelOption) => (
-                  <SelectItem 
-                    key={modelOption} 
-                    value={modelOption}
-                    className="hover:bg-pink-50 focus:bg-pink-50"
-                  >
-                    {modelOption}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            )}
-          </Select>
-        )}
-      </div>
+  <div className="pt-2 mb-6 relative z-10">
+    <Label htmlFor="order-select" className="block mb-2 text-gray-700">
+      Ordenar por
+    </Label>
+    <Select value={orden} onValueChange={(value) => setOrden(value as "rapidez" | "precision")}>
+      <SelectTrigger id="order-select" className="border-2 border-pink-200 bg-white">
+        <SelectValue placeholder="Ordenar por..." />
+      </SelectTrigger>
+      <SelectContent className="bg-white border-pink-200">
+        <SelectItem value="rapidez">Rapidez (más rápido primero)</SelectItem>
+        <SelectItem value="precision">Precisión (más preciso primero)</SelectItem>
+      </SelectContent>
+    </Select>
+  </div>
+
+
+<div className="pt-2 relative z-0">
+  <Label htmlFor="model-select" className="block mb-2 text-gray-700">
+    Modelo Específico
+  </Label>
+  {isLoading ? (
+    <div className="flex items-center justify-center p-4 border-2 border-pink-200 rounded-md bg-white">
+      <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
+      <span>Cargando modelos...</span>
     </div>
+  ) : (
+    <Select
+      value={model}
+      onValueChange={setModel}
+      disabled={currentModels.length === 0}
+    >
+      <SelectTrigger
+        id="model-select"
+        className="border-2 border-pink-200 focus:border-pink-500 bg-white"
+      >
+        <SelectValue
+          placeholder={currentModels.length === 0 ? "No hay modelos disponibles" : "Selecciona un modelo"}
+        />
+      </SelectTrigger>
+      {currentModels.length > 0 && (
+        <SelectContent className="bg-white border-pink-200">
+          {currentModels.map((modelOption) => (
+            <SelectItem
+              key={modelOption}
+              value={modelOption}
+              className="hover:bg-pink-50 focus:bg-pink-50"
+            >
+              {modelOption}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      )}
+    </Select>
+  )}
+    </div>
+  </div>
   );
 }
