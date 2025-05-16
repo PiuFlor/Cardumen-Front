@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import VideoSource from "./components/video-source";
 import ModelSelector from "./components/model-selector";
 import VideoDisplay from "./components/video-display";
+import ResultsModal from "./components/results-modal";
 import { Button } from "./components/ui/button";
 import { Card, CardContent } from "./components/ui/card";
-import { Camera, Film, Play, Square } from "lucide-react";
-import ResultsModal from "./components/results-modal";
+import { Camera, Film, Play, Square, BarChart2 } from "lucide-react";
 
 export default function App() {
   const [videoSource, setVideoSource] = useState<"file" | "webcam">("webcam");
@@ -14,11 +14,11 @@ export default function App() {
   const [model, setModel] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
-  const [showResultsModal, setShowResultsModal] = useState(false);
+  const [showResults, setShowResults] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState({
     yolo: ['yolo11n.pt', 'yolo11s.pt', 'yolo11m.pt', 'yolo11l.pt', 'yolo11x.pt'],
-    mediapipe: ["efficientdet_lite0_pf32.tflite","efficientdet_lite0_int8.tflite", "efficientdet_lite0_pf16.tflite", "ssd_mobilenet_v2_int8.tflite", "ssd_mobilenet_v2_pf32.tflite" ]
+    mediapipe: ["efficientdet_lite0_pf32.tflite","efficientdet_lite0_int8.tflite", "efficientdet_lite0_pf16.tflite", "ssd_mobilenet_v2_int8.tflite", "ssd_mobilenet_v2_pf32.tflite"]
   });
   const [isLoadingModels, setIsLoadingModels] = useState<boolean>(false);
 
@@ -45,10 +45,6 @@ export default function App() {
         }
       } catch (error) {
         console.error("Error al cargar modelos:", error);
-        setModelOptions({
-          yolo: ['yolo11n.pt', 'yolo11s.pt', 'yolo11m.pt', 'yolo11l.pt', 'yolo11x.pt'],
-          mediapipe: ["efficientdet_lite0_pf32.tflite","efficientdet_lite0_int8.tflite", "efficientdet_lite0_pf16.tflite", "ssd_mobilenet_v2_int8.tflite", "ssd_mobilenet_v2_pf32.tflite" ]
-        });
       } finally {
         setIsLoadingModels(false);
       }
@@ -61,14 +57,14 @@ export default function App() {
   useEffect(() => {
     setProcessedVideoUrl(null);
     setIsAnalyzing(false);
-    setShowResultsModal(false);
+    setShowResults(false);
   }, [videoSource]);
 
   // Limpiar resultados al cambiar archivo
   useEffect(() => {
     setProcessedVideoUrl(null);
     setIsAnalyzing(false);
-    setShowResultsModal(false);
+    setShowResults(false);
   }, [videoFile]);
 
   const toggleAnalysis = () => {
@@ -77,7 +73,7 @@ export default function App() {
     } else {
       setIsAnalyzing(true);
       setProcessedVideoUrl(null);
-      setShowResultsModal(false);
+      setShowResults(false);
     }
   };
 
@@ -85,7 +81,7 @@ export default function App() {
     setProcessedVideoUrl(url);
     setIsAnalyzing(false);
     setTaskId(taskId);
-    setShowResultsModal(true);
+    setShowResults(true);
   };
 
   return (
@@ -93,10 +89,10 @@ export default function App() {
       <div className="container mx-auto py-8 px-4">
         <div className="text-center mb-8">
           <h1 className="text-4xl font-bold bg-gradient-to-r from-purple-600 via-pink-500 to-orange-500 text-transparent bg-clip-text">
-            Analizador de Video con IA
+            Analizador de Video 
           </h1>
           <p className="text-gray-600 mt-2">
-            Analiza videos o transmisiones de webcam con modelos de IA avanzados
+            Analiza videos o transmisiones de webcam con modelos avanzados
           </p>
         </div>
 
@@ -142,7 +138,7 @@ export default function App() {
 
             {/* Botón de análisis */}
             <Button
-              className="w-full py-6 text-lg shadow-lg transition-all duration-300 hover:scale-105 bg-blue-600 text-black hover:bg-blue-700"
+              className="w-full py-6 text-lg shadow-lg transition-all duration-300 hover:scale-105 bg-blue-600 hover:bg-blue-700 text-white"
               size="lg"
               onClick={toggleAnalysis}
               disabled={
@@ -190,9 +186,21 @@ export default function App() {
         </div>
       </div>
 
+      {/* Botón flotante para mostrar resultados */}
+      {processedVideoUrl && (
+        <Button 
+          onClick={() => setShowResults(true)}
+          className="fixed bottom-6 right-6 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105 flex items-center z-50"
+        >
+          <BarChart2 className="mr-2 h-5 w-5" />
+          Ver Métricas
+        </Button>
+      )}
+
+      {/* Modal de resultados */}
       <ResultsModal
-        isOpen={showResultsModal}
-        onClose={() => setShowResultsModal(false)}
+        isOpen={showResults}
+        onClose={() => setShowResults(false)}
         videoFile={videoFile?.name || null}
         framework={framework}
         model={model}

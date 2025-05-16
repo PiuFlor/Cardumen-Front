@@ -31,7 +31,6 @@ export default function ResultsModal({ isOpen, onClose, videoFile, framework, mo
   const [metrics, setMetrics] = useState<MetricsData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  // Obtener métricas cuando se abre el modal
   useEffect(() => {
     const fetchMetrics = async () => {
       if (isOpen && taskId) {
@@ -43,6 +42,7 @@ export default function ResultsModal({ isOpen, onClose, videoFile, framework, mo
           setMetrics(data)
         } catch (error) {
           console.error("Error fetching metrics:", error)
+          setMetrics(null)
         } finally {
           setIsLoading(false)
         }
@@ -52,29 +52,25 @@ export default function ResultsModal({ isOpen, onClose, videoFile, framework, mo
     fetchMetrics()
   }, [isOpen, taskId])
 
-  if (!isOpen) return null
-
   const exportToPdf = async () => {
     try {
       setIsExporting(true)
-
-      // Crear un nuevo documento PDF
       const doc = new jsPDF()
 
-      // Añadir título
-      doc.setFontSize(20)
+      // Configuración del documento
+      doc.setFont("helvetica")
       doc.setTextColor(33, 33, 33)
+
+      // Título
+      doc.setFontSize(20)
       doc.text("Resultados del Análisis de Video", 20, 20)
 
-      // Añadir línea separadora
+      // Línea separadora
       doc.setDrawColor(200, 200, 200)
       doc.line(20, 25, 190, 25)
 
-      // Configurar fuente para el contenido
+      // Información básica
       doc.setFontSize(12)
-      doc.setTextColor(66, 66, 66)
-
-      // Añadir información del análisis
       let y = 35
       const lineHeight = 8
 
@@ -85,36 +81,38 @@ export default function ResultsModal({ isOpen, onClose, videoFile, framework, mo
       doc.text(`Modelo: ${model}`, 20, y)
       y += lineHeight * 1.5
 
-      // Añadir resultados de rendimiento si hay métricas
+      // Métricas
       if (metrics) {
         doc.setFontSize(14)
         doc.text("Métricas de Rendimiento", 20, y)
         y += lineHeight * 1.5
         doc.setFontSize(12)
 
-        doc.text(`Uso de CPU: ${metrics.cpu_usage.toFixed(2)}%`, 20, y)
+        const formatMetric = (value: number, decimals: number) => 
+          typeof value === 'number' ? value.toFixed(decimals) : 'N/A'
+
+        doc.text(`Uso de CPU: ${formatMetric(metrics.cpu_usage, 2)}%`, 20, y)
         y += lineHeight
-        doc.text(`Tiempo total de procesamiento: ${metrics.wall_clock_time.toFixed(2)} segundos`, 20, y)
+        doc.text(`Tiempo total: ${formatMetric(metrics.wall_clock_time, 2)} segundos`, 20, y)
         y += lineHeight
-        doc.text(`Confianza promedio: ${metrics.confidence.toFixed(4)}`, 20, y)
+        doc.text(`Confianza promedio: ${formatMetric(metrics.confidence, 4)}`, 20, y)
         y += lineHeight
-        doc.text(`Tiempo medio de inferencia: ${metrics.avg_inference_time.toFixed(4)} segundos`, 20, y)
+        doc.text(`Tiempo medio inferencia: ${formatMetric(metrics.avg_inference_time, 4)} segundos`, 20, y)
         y += lineHeight
-        doc.text(`Tiempo medio de procesamiento: ${metrics.avg_processing_time.toFixed(4)} segundos`, 20, y)
+        doc.text(`Tiempo medio procesamiento: ${formatMetric(metrics.avg_processing_time, 4)} segundos`, 20, y)
         y += lineHeight
-        doc.text(`Total de frames procesados: ${metrics.total_frames}`, 20, y)
+        doc.text(`Total de frames: ${metrics.total_frames}`, 20, y)
         y += lineHeight
-        doc.text(`FPS promedio: ${metrics.current_fps.toFixed(2)}`, 20, y)
-        y += lineHeight * 1.5
+        doc.text(`FPS promedio: ${formatMetric(metrics.current_fps, 2)}`, 20, y)
       }
 
-      // Añadir pie de página
+      // Pie de página
       const date = new Date().toLocaleString()
       doc.setFontSize(10)
       doc.setTextColor(120, 120, 120)
       doc.text(`Generado el ${date}`, 20, 280)
 
-      // Guardar el PDF
+      // Guardar PDF
       doc.save("resultados-analisis-video.pdf")
     } catch (error) {
       console.error("Error al exportar a PDF:", error)
@@ -140,7 +138,7 @@ export default function ResultsModal({ isOpen, onClose, videoFile, framework, mo
             <h3 className="text-lg font-medium text-gray-900 mb-2">Información del Video</h3>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div className="text-gray-500">Video:</div>
-              <div className="font-medium">{videoFile || "N/A"}</div>
+              <div className="font-medium truncate">{videoFile || "N/A"}</div>
 
               <div className="text-gray-500">Framework:</div>
               <div className="font-medium">{framework}</div>
