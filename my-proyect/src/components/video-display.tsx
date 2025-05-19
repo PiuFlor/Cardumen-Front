@@ -1,4 +1,3 @@
-
 "use client"
 import { useEffect, useRef, useState, useCallback } from "react"
 
@@ -8,7 +7,7 @@ interface VideoDisplayProps {
   isAnalyzing: boolean
   framework: "yolo" | "mediapipe"
   model: string
-  onProcessingComplete?: (url: string) => void
+  onProcessingComplete?: (url: string, taskId: string) => void
   processedUrl?: string | null
 }
 
@@ -39,34 +38,71 @@ export default function VideoDisplay({
   const renderRequestRef = useRef<number | null>(null)
 
   const startWebcam = async () => {
-    try {
-      setStatus("Iniciando cámara...")
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { 
-          width: { ideal: 640 }, 
-          height: { ideal: 480 },
-          frameRate: { ideal: 30 }
-        } 
-      })
-      streamRef.current = stream
+  try {
+    setStatus("Iniciando cámara...");
+    
+    // 1. Detener cualquier stream existente primero
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+    }
 
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await new Promise((resolve) => {
-          if (videoRef.current) {
-            videoRef.current.onloadedmetadata = resolve
-          }
-        })
-        videoRef.current.play()
-        setStatus("Cámara lista")
+    // 2. Intentar con constraints más flexibles
+    const constraints = {
+      video: {
+        width: { min: 320, ideal: 640, max: 1280 },
+        height: { min: 240, ideal: 480, max: 720 },
+        frameRate: { min: 15, ideal: 30 }
+      } 
+    };
+
+    const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      .catch(async (err) => {
+        // Fallback: intentar sin restricciones si falla
+        console.warn("Intento con restricciones falló, probando sin restricciones...", err);
+        return await navigator.mediaDevices.getUserMedia({ video: true });
+      });
+
+    streamRef.current = stream;
+
+    // 3. Configurar el video
+    if (videoRef.current) {
+      videoRef.current.srcObject = stream;
+      
+      // Esperar a que el video esté listo
+      await new Promise((resolve, reject) => {
+        if (!videoRef.current) return reject();
+        
+        videoRef.current.onloadedmetadata = resolve;
+        videoRef.current.onerror = () => reject(new Error("Error al cargar video"));
+      });
+
+      // Intentar reproducir
+      await videoRef.current.play().catch(e => {
+        throw new Error(`No se pudo reproducir: ${e.message}`);
+      });
+
+      setStatus("Cámara lista");
+      
+      // 4. Iniciar análisis automáticamente si está habilitado
+      if (isAnalyzing) {
+        connectWebSocket();
       }
-    } catch (error) {
-      console.error("Error al acceder a la cámara:", error)
-      setStatus("Error: No se pudo acceder a la cámara")
+    }
+  } catch (error) {
+    console.error("Error detallado:", error);
+    setStatus(`Error: ${error instanceof Error ? error.message : "Falló la cámara"}`);
+    
+    // Limpiar en caso de error
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
   }
+};
 
-  // Función para renderizar frames de manera suave
   const renderProcessedFrames = useCallback(() => {
     const now = performance.now()
     const canvas = processedCanvasRef.current
@@ -75,13 +111,11 @@ export default function VideoDisplay({
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     
-    // Si hay frames en el buffer y ha pasado suficiente tiempo desde el último renderizado
-    if (frameBufferRef.current.length > 0 && now - lastRenderTimeRef.current >= 16) { // ~60fps
+    if (frameBufferRef.current.length > 0 && now - lastRenderTimeRef.current >= 16) {
       const nextFrame = frameBufferRef.current.shift()
       if (nextFrame) {
         const img = new Image()
         img.onload = () => {
-          // Ajustar tamaño del canvas si es necesario
           if (canvas.width !== img.width || canvas.height !== img.height) {
             canvas.width = img.width
             canvas.height = img.height
@@ -106,19 +140,17 @@ export default function VideoDisplay({
 
     ws.onopen = () => {
       setStatus("Analizando en tiempo real...")
-      frameBufferRef.current = [] // Limpiar buffer
+      frameBufferRef.current = []
       startFrameProcessing()
       renderRequestRef.current = requestAnimationFrame(renderProcessedFrames)
     }
 
     ws.onmessage = (event) => {
-      // Agregar frame al buffer con timestamp
       frameBufferRef.current.push({
         timestamp: performance.now(),
         image: event.data
       })
       
-      // Limitar tamaño del buffer para evitar uso excesivo de memoria
       if (frameBufferRef.current.length > 30) {
         frameBufferRef.current = frameBufferRef.current.slice(-20)
       }
@@ -141,7 +173,6 @@ export default function VideoDisplay({
 
   const startFrameProcessing = () => {
     if (!frameIntervalRef.current) {
-      // Aumentar la frecuencia a 30fps (33ms entre frames)
       frameIntervalRef.current = setInterval(sendFrame, 33)
     }
   }
@@ -164,7 +195,6 @@ export default function VideoDisplay({
         canvas.height = video.videoHeight
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
         
-        // Optimizar calidad/tamaño para transmisión más rápida
         canvas.toBlob((blob) => {
           if (!blob) return
           const reader = new FileReader()
@@ -175,7 +205,7 @@ export default function VideoDisplay({
             }
           }
           reader.readAsDataURL(blob)
-        }, 'image/jpeg', 0.85) // Calidad 0.85 para balance entre calidad y tamaño
+        }, 'image/jpeg', 0.85)
       }
     }
   }
@@ -189,7 +219,7 @@ export default function VideoDisplay({
 
     ws.onopen = () => {
       setStatus("Procesando archivo...")
-      frameBufferRef.current = [] // Limpiar buffer
+      frameBufferRef.current = []
       renderRequestRef.current = requestAnimationFrame(renderProcessedFrames)
     }
 
@@ -198,13 +228,11 @@ export default function VideoDisplay({
         const data = JSON.parse(event.data)
         
         if (data.type === 'frame') {
-          // Agregar frame al buffer
           frameBufferRef.current.push({
             timestamp: performance.now(),
             image: data.frame
           })
           
-          // Limitar tamaño del buffer
           if (frameBufferRef.current.length > 30) {
             frameBufferRef.current = frameBufferRef.current.slice(-20)
           }
@@ -214,7 +242,7 @@ export default function VideoDisplay({
         
         if (data.type === 'complete' && onProcessingComplete) {
           const videoUrl = `http://localhost:8000/${data.output_path}`
-          onProcessingComplete(videoUrl)
+          onProcessingComplete(videoUrl, data.task_id)
           setStatus("Procesamiento completado")
           setCurrentTaskId(null)
           if (renderRequestRef.current) {
@@ -275,7 +303,6 @@ export default function VideoDisplay({
     formData.append('modelo', model)
 
     try {
-      // 1. Subir archivo y obtener task_id
       const uploadResponse = await fetch('http://localhost:8000/upload', {
         method: 'POST',
         body: formData,
@@ -288,8 +315,7 @@ export default function VideoDisplay({
       }
 
       const { task_id } = await uploadResponse.json()
-      
-      // 2. Conectar WebSocket para progreso
+      setCurrentTaskId(task_id)
       connectFileWebSocket(task_id)
 
     } catch (error) {
@@ -299,6 +325,7 @@ export default function VideoDisplay({
       } else {
         setStatus("Procesamiento cancelado")
       }
+      setCurrentTaskId(null)
     } finally {
       setIsProcessing(false)
       abortControllerRef.current = null
@@ -313,17 +340,14 @@ export default function VideoDisplay({
       }
       setStatus("Análisis detenido")
     } else if (videoSource === "file") {
-      // Cancelar WebSocket si existe
       if (wsFileRef.current) {
         wsFileRef.current.close()
       }
       
-      // Cancelar fetch si existe
       if (abortControllerRef.current) {
         abortControllerRef.current.abort()
       }
       
-      // Cancelar tarea en el backend si existe
       if (currentTaskId) {
         try {
           await fetch(`http://localhost:8000/cancel/${currentTaskId}`, {
@@ -339,7 +363,6 @@ export default function VideoDisplay({
       setCurrentTaskId(null)
     }
     
-    // Limpiar buffer y cancelar renderizado
     frameBufferRef.current = []
     if (renderRequestRef.current) {
       cancelAnimationFrame(renderRequestRef.current)
@@ -357,6 +380,7 @@ export default function VideoDisplay({
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
       }
+      setCurrentTaskId(null)
     }
   }, [videoSource, processedUrl])
 
@@ -398,7 +422,6 @@ export default function VideoDisplay({
               isAnalyzing ? 'hidden' : 'block'
             }`}
           />
-          {/* Canvas para renderizado fluido en lugar de la imagen */}
           <canvas
             ref={processedCanvasRef}
             className={`w-full h-full object-contain ${
