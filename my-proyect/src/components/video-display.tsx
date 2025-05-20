@@ -133,8 +133,9 @@ export default function VideoDisplay({
 
   const connectWebSocket = () => {
     setStatus("Conectando al servidor...")
+    const maxLatency = 500
     const ws = new WebSocket(
-      `ws://localhost:8000/ws/image?tecnologia=${framework}&modelo=${model}`
+      `ws://localhost:8000/ws/image?tecnologia=${framework}&modelo=${model}&max_latency=${maxLatency}`
     )
     wsRef.current = ws
 
@@ -146,9 +147,11 @@ export default function VideoDisplay({
     }
 
     ws.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      setStatus(`Analizando en tiempo real... ${data.fps}fps`)
       frameBufferRef.current.push({
         timestamp: performance.now(),
-        image: event.data
+        image: data.frame
       })
       
       if (frameBufferRef.current.length > 30) {
@@ -201,7 +204,10 @@ export default function VideoDisplay({
           reader.onload = () => {
             const base64Data = reader.result?.toString().split(',')[1]
             if (base64Data && wsRef.current?.readyState === WebSocket.OPEN) {
-              wsRef.current.send(base64Data)
+              wsRef.current.send(JSON.stringify({
+                timestamp: Date.now() / 1000,
+                frame: base64Data
+              }))
             }
           }
           reader.readAsDataURL(blob)
