@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState, useCallback } from "react"
 
 interface VideoDisplayProps {
-  videoSource: "file" | "webcam"
+  videoSource: "file" | "webcam" | "stream"
+  streamUrl?: string  // para fuente YouTube
   videoFile: File | null
   isAnalyzing: boolean
   framework: "yolo" | "mediapipe"
@@ -13,6 +14,7 @@ interface VideoDisplayProps {
 
 export default function VideoDisplay({
   videoSource,
+  streamUrl,
   videoFile,
   isAnalyzing,
   framework,
@@ -31,11 +33,52 @@ export default function VideoDisplay({
   const frameIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
+  const [youtubeStreamUrl, setYoutubeStreamUrl] = useState<string | null>(null);
+
   
   // Buffer para almacenar frames procesados
   const frameBufferRef = useRef<{timestamp: number, image: string}[]>([])
   const lastRenderTimeRef = useRef<number>(0)
   const renderRequestRef = useRef<number | null>(null)
+
+  // Función para cargar stream YouTube vía backend (yt-dlp)
+  const fetchYoutubeStreamUrl = async (url: string) => {
+    setStatus("Obteniendo URL del stream de YouTube...")
+    try {
+      const endpoint = `http://localhost:8000/get_youtube_stream_url?youtube_url=${encodeURIComponent(url)}`;
+
+      const res = await fetch(endpoint, {
+        method: "GET",
+      });
+
+      if (!res.ok) throw new Error("Error al obtener URL de stream")
+
+      const data = await res.json()
+      setYoutubeStreamUrl(data.stream_url)
+      setStatus("Stream listo para reproducir")
+
+      const formData = new FormData();
+      formData.append("stream_url", data.stream_url);
+      formData.append("tecnologia", framework); // o la tecnología que estés usando
+      formData.append("modelo", model); // el modelo que uses
+
+      const uploadRes = await fetch("http://localhost:8000/upload/stream", {
+        method: "POST",
+        body: formData,
+      });
+
+
+      if (!uploadRes.ok) throw new Error("Error iniciando procesamiento del stream");
+
+      const uploadData = await uploadRes.json();
+      console.log("Tarea iniciada:", uploadData);
+      setStatus("Procesamiento iniciado, task id: " + uploadData.task_id);
+
+    } catch (error) {
+      setStatus("Error obteniendo stream de YouTube")
+      console.error(error)
+    }
+  }
 
   const startWebcam = async () => {
   try {
@@ -363,10 +406,16 @@ export default function VideoDisplay({
           console.error("Error cancelando tarea en backend:", e)
         }
       }
-      
+
       setIsProcessing(false)
       setStatus("Procesamiento cancelado")
       setCurrentTaskId(null)
+    } else if (videoSource === "stream") {
+        if (wsRef.current) {
+          wsRef.current.close();
+        }
+        setStatus("Análisis detenido");
+        setYoutubeStreamUrl(null);
     }
     
     frameBufferRef.current = []
@@ -404,6 +453,66 @@ export default function VideoDisplay({
     }
   }, [isAnalyzing, videoFile, processedUrl])
 
+useEffect(() => {
+  if (videoSource === "webcam" && !processedUrl) {
+    startWebcam()
+  } else if (videoSource === "stream" && streamUrl) {
+    fetchYoutubeStreamUrl(streamUrl)
+  }
+
+  return () => {
+    stopAnalysis()
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+    setCurrentTaskId(null)
+    setYoutubeStreamUrl(null)
+  }
+}, [videoSource, processedUrl, streamUrl])
+
+useEffect(() => {
+  if (videoSource === "stream" && youtubeStreamUrl && videoRef.current) {
+    videoRef.current.src = youtubeStreamUrl
+    videoRef.current.play().then(() => {
+      setStatus("Reproduciendo stream")
+      if (isAnalyzing) {
+        connectWebSocket()
+      }
+    }).catch((e) => {
+      console.error("No se pudo reproducir el stream:", e)
+      setStatus("Error reproduciendo stream")
+    })
+  }
+}, [youtubeStreamUrl, videoSource])
+
+useEffect(() => {
+  const setup = async () => {
+    if (!isAnalyzing) return;
+
+    if (videoSource === "webcam") {
+      await startWebcam(); // Ya inicia análisis automáticamente
+    }
+
+    if (videoSource === "file" && videoFile) {
+      await processFile();
+    }
+
+    if (videoSource === "stream" && streamUrl) {
+      await fetchYoutubeStreamUrl(streamUrl);
+    }
+  }
+
+  setup();
+
+  return () => {
+    stopAnalysis();
+  }
+}, [isAnalyzing, videoSource, videoFile, streamUrl, framework, model])
+
+
+
+
   return (
     <div className="relative w-full h-full bg-black rounded-lg overflow-hidden">
       {processedUrl ? (
@@ -428,6 +537,18 @@ export default function VideoDisplay({
               isAnalyzing ? 'hidden' : 'block'
             }`}
           />
+          {/* {videoSource === 'stream' || !isAnalyzing ? (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              controls
+              className="w-full h-full object-contain"
+              onError={() => setStatus("Error al cargar video")}
+              src={videoSource === "stream" ? youtubeStreamUrl || undefined : undefined}
+            />
+          ) : null} */}
           <canvas
             ref={processedCanvasRef}
             className={`w-full h-full object-contain ${

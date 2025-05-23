@@ -4,15 +4,17 @@ import type React from "react"
 import { Label } from "./ui/label"
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group"
 import { Input } from "./ui/input"
-import { Camera, Upload } from "lucide-react"
+import { Camera, Upload, Link } from "lucide-react"
 
 interface VideoSourceProps {
-  videoSource: "file" | "webcam"
-  setVideoSource: (source: "file" | "webcam") => void
+  videoSource: "file" | "webcam" | "stream"
+  setVideoSource: (source: "file" | "webcam" | "stream") => void
   setVideoFile: (file: File | null) => void
+  streamUrl?: string
+  setStreamUrl?: (url: string) => void
 }
 
-export default function VideoSource({ videoSource, setVideoSource, setVideoFile }: VideoSourceProps) {
+export default function VideoSource({ videoSource, setVideoSource, setVideoFile, streamUrl, setStreamUrl }: VideoSourceProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files && files.length > 0) {
@@ -45,6 +47,17 @@ export default function VideoSource({ videoSource, setVideoSource, setVideoFile 
             <span>Archivo de Video</span>
           </Label>
         </div>
+
+         <div
+          className={`flex items-center space-x-2 p-3 rounded-lg transition-colors ${videoSource === "stream" ? "bg-purple-100" : ""}`}
+        >
+          <RadioGroupItem value="stream" id="stream" className="text-purple-600" />
+          <Label htmlFor="stream" className="flex items-center cursor-pointer">
+            <Link className="mr-2 h-4 w-4 text-purple-600" />
+            <span>Stream (URL)</span>
+          </Label>
+        </div>
+
       </RadioGroup>
 
       {videoSource === "file" && (
@@ -54,6 +67,18 @@ export default function VideoSource({ videoSource, setVideoSource, setVideoFile 
             accept="video/*"
             onChange={handleFileChange}
             className="border-2 border-dashed border-purple-300 hover:border-purple-500 transition-colors py-8 text-center"
+          />
+        </div>
+      )}
+      {videoSource === "stream" && (
+        <div className="pt-2 space-y-1">
+          <Label htmlFor="streamUrl">URL del Stream (YouTube o RTMP)</Label>
+          <Input
+            id="streamUrl"
+            type="text"
+            placeholder="https://www.youtube.com/watch?v=..."
+            value={streamUrl}
+            onChange={(e) => setStreamUrl?.(e.target.value)}
           />
         </div>
       )}

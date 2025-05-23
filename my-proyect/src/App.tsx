@@ -8,10 +8,11 @@ import { Card, CardContent } from "./components/ui/card";
 import { Camera, Film, Play, Square, BarChart2 } from "lucide-react";
 
 export default function App() {
-  const [videoSource, setVideoSource] = useState<"file" | "webcam">("webcam");
+  const [videoSource, setVideoSource] = useState<"file" | "webcam" | "stream">("webcam");
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [framework, setFramework] = useState<"yolo" | "mediapipe">("yolo");
   const [model, setModel] = useState<string>("");
+  const [streamUrl, setStreamUrl] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
@@ -112,6 +113,8 @@ export default function App() {
                   videoSource={videoSource}
                   setVideoSource={setVideoSource}
                   setVideoFile={setVideoFile}
+                  streamUrl={streamUrl}
+                  setStreamUrl={setStreamUrl}
                 />
               </CardContent>
             </Card>
@@ -179,6 +182,7 @@ export default function App() {
                   model={model}
                   onProcessingComplete={handleProcessingComplete}
                   processedUrl={processedVideoUrl}
+                  streamUrl={streamUrl}
                 />
               </CardContent>
             </Card>
