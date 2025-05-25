@@ -12,9 +12,11 @@ interface VideoSourceProps {
   setVideoFile: (file: File | null) => void
   streamUrl?: string
   setStreamUrl?: (url: string) => void
+  max_latency: number | null
+  setMax_latency: (latency: number | null) => void
 }
 
-export default function VideoSource({ videoSource, setVideoSource, setVideoFile, streamUrl, setStreamUrl }: VideoSourceProps) {
+export default function VideoSource({ videoSource, setVideoSource, setVideoFile, streamUrl, setStreamUrl, max_latency, setMax_latency }: VideoSourceProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files && files.length > 0) {
@@ -67,6 +69,20 @@ export default function VideoSource({ videoSource, setVideoSource, setVideoFile,
             accept="video/*"
             onChange={handleFileChange}
             className="border-2 border-dashed border-purple-300 hover:border-purple-500 transition-colors py-8 text-center"
+          />
+        </div>
+      )}
+      {videoSource === "webcam" && (
+        <div className="pt-2 space-y-1">
+          <Label htmlFor="maxLatency">Latencia máxima (ms)</Label>
+          <Input
+            id="maxLatency"
+            type="number"
+            placeholder="500"
+            value={max_latency || ''}
+            onChange={(e) => setMax_latency(e.target.value ? Number(e.target.value) : null)}
+            min="0"
+            step="50"
           />
         </div>
       )}
