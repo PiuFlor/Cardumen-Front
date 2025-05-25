@@ -115,6 +115,7 @@ export default function App() {
                   setVideoFile={setVideoFile}
                   streamUrl={streamUrl}
                   setStreamUrl={setStreamUrl}
+                  isLoading={false}
                 />
               </CardContent>
             </Card>

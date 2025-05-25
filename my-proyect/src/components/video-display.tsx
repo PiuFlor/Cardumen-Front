@@ -1,5 +1,6 @@
 "use client"
 import { useEffect, useRef, useState, useCallback } from "react"
+import Hls from "hls.js"
 
 interface VideoDisplayProps {
   videoSource: "file" | "webcam" | "stream"
@@ -41,43 +42,9 @@ export default function VideoDisplay({
   const lastRenderTimeRef = useRef<number>(0)
   const renderRequestRef = useRef<number | null>(null)
 
-  // Función para cargar stream YouTube vía backend (yt-dlp)
-  const fetchYoutubeStreamUrl = async (url: string) => {
-    setStatus("Obteniendo URL del stream de YouTube...")
-    try {
-      const endpoint = `http://localhost:8000/get_youtube_stream_url?youtube_url=${encodeURIComponent(url)}`;
 
-      const res = await fetch(endpoint, {
-        method: "GET",
-      });
-
-      if (!res.ok) throw new Error("Error al obtener URL de stream")
-
-      const data = await res.json()
-      setYoutubeStreamUrl(data.stream_url)
-      setStatus("Stream listo para reproducir")
-
-      const formData = new FormData();
-      formData.append("stream_url", data.stream_url);
-      formData.append("tecnologia", framework); // o la tecnología que estés usando
-      formData.append("modelo", model); // el modelo que uses
-
-      const uploadRes = await fetch("http://localhost:8000/upload/stream", {
-        method: "POST",
-        body: formData,
-      });
-
-
-      if (!uploadRes.ok) throw new Error("Error iniciando procesamiento del stream");
-
-      const uploadData = await uploadRes.json();
-      console.log("Tarea iniciada:", uploadData);
-      setStatus("Procesamiento iniciado, task id: " + uploadData.task_id);
-
-    } catch (error) {
-      setStatus("Error obteniendo stream de YouTube")
-      console.error(error)
-    }
+  const isMjpegUrl = (url: string | null): boolean => {
+    return !!url && url.includes(".jpg") && url.includes("stream=");
   }
 
   const startWebcam = async () => {
@@ -177,6 +144,9 @@ export default function VideoDisplay({
   const connectWebSocket = () => {
     setStatus("Conectando al servidor...")
     const maxLatency = 500
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.close()
+    }
     const ws = new WebSocket(
       `ws://localhost:8000/ws/image?tecnologia=${framework}&modelo=${model}&max_latency=${maxLatency}`
     )
@@ -414,6 +384,17 @@ export default function VideoDisplay({
         if (wsRef.current) {
           wsRef.current.close();
         }
+        
+        if (currentTaskId) {
+          try {
+            await fetch(`http://localhost:8000/cancel/${currentTaskId}`, {
+              method: 'POST'
+            })
+          } catch (e) {
+            console.error("Error cancelando tarea en backend:", e)
+          }
+        }
+
         setStatus("Análisis detenido");
         setYoutubeStreamUrl(null);
     }
@@ -453,63 +434,104 @@ export default function VideoDisplay({
     }
   }, [isAnalyzing, videoFile, processedUrl])
 
-useEffect(() => {
-  if (videoSource === "webcam" && !processedUrl) {
-    startWebcam()
-  } else if (videoSource === "stream" && streamUrl) {
-    fetchYoutubeStreamUrl(streamUrl)
-  }
 
-  return () => {
-    stopAnalysis()
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
-      streamRef.current = null
-    }
-    setCurrentTaskId(null)
-    setYoutubeStreamUrl(null)
-  }
-}, [videoSource, processedUrl, streamUrl])
+  useEffect(() => {
+    const setupStream = async () => {
+      if (videoSource === "stream" && streamUrl && isAnalyzing && !isMjpegUrl(streamUrl)) {
+        try {
+          setStatus("Obteniendo URL del stream de YouTube...");
+          const endpoint = `http://localhost:8000/get_youtube_stream_url?youtube_url=${encodeURIComponent(streamUrl)}`;
+          const res = await fetch(endpoint);
+          if (!res.ok) throw new Error("Error al obtener URL de stream");
 
-useEffect(() => {
-  if (videoSource === "stream" && youtubeStreamUrl && videoRef.current) {
-    videoRef.current.src = youtubeStreamUrl
-    videoRef.current.play().then(() => {
-      setStatus("Reproduciendo stream")
-      if (isAnalyzing) {
-        connectWebSocket()
+          const data = await res.json();
+          if (!data.stream_url) throw new Error("URL del stream vacía");
+
+          setYoutubeStreamUrl(data.stream_url);
+        } catch (error) {
+          console.error("❌ Error obteniendo stream URL:", error);
+          setStatus("Error obteniendo stream de YouTube");
+        }
       }
-    }).catch((e) => {
-      console.error("No se pudo reproducir el stream:", e)
-      setStatus("Error reproduciendo stream")
-    })
-  }
-}, [youtubeStreamUrl, videoSource])
+    };
+    setupStream();
+
+  }, [videoSource, streamUrl, isAnalyzing]);
+  
+useEffect(() => {
+  const reproducirYConectar = async () => {
+    if (videoSource === "stream" && youtubeStreamUrl && videoRef.current) {
+      const video = videoRef.current;
+
+      try {
+        if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = youtubeStreamUrl;
+          await video.play();
+          setStatus("Reproduciendo stream (nativo)");
+          if (isAnalyzing) connectWebSocket();
+        } else if (Hls.isSupported()) {
+          const hls = new Hls();
+          hls.loadSource(`http://localhost:8000/proxy_stream?url=${encodeURIComponent(youtubeStreamUrl)}`)
+          hls.attachMedia(video);
+
+          hls.on(Hls.Events.MANIFEST_PARSED, async () => {
+            try {
+              await video.play();
+              setStatus("Reproduciendo stream (HLS.js)");
+              if (isAnalyzing) connectWebSocket();
+            } catch (err) {
+              console.error("No se pudo reproducir el stream con HLS.js:", err);
+              setStatus("Error reproduciendo stream");
+            }
+          });
+
+          hls.on(Hls.Events.ERROR, (event, data) => {
+            console.error("HLS.js error", data);
+            setStatus("Error en reproducción de HLS");
+          });
+        } else {
+          setStatus("Este navegador no soporta reproducción HLS");
+        }
+      } catch (e) {
+        console.error("No se pudo reproducir el stream:", e);
+        setStatus("Error reproduciendo stream");
+      }
+    }
+  };
+
+  reproducirYConectar();
+}, [videoSource, youtubeStreamUrl, isAnalyzing]);
 
 useEffect(() => {
-  const setup = async () => {
-    if (!isAnalyzing) return;
+  const setupMjpegStream = async () => {
+    if (videoSource === "stream" && streamUrl && isAnalyzing && isMjpegUrl(streamUrl)) {
+      try {
+        setStatus("Iniciando análisis de stream MJPEG...");
 
-    if (videoSource === "webcam") {
-      await startWebcam(); // Ya inicia análisis automáticamente
+        const formData = new FormData();
+        formData.append("stream_url", streamUrl);
+        formData.append("tecnologia", framework);
+        formData.append("modelo", model);
+
+        const res = await fetch("http://localhost:8000/upload/stream", {
+          method: "POST",
+          body: formData
+        });
+
+        if (!res.ok) throw new Error("Error enviando stream MJPEG");
+
+        const { task_id } = await res.json();
+        connectFileWebSocket(task_id);  // Usa mismo mecanismo que para archivos
+        setStatus("Stream MJPEG conectado");
+      } catch (e) {
+        console.error("❌ Error MJPEG:", e);
+        setStatus("Error iniciando stream MJPEG");
+      }
     }
+  };
 
-    if (videoSource === "file" && videoFile) {
-      await processFile();
-    }
-
-    if (videoSource === "stream" && streamUrl) {
-      await fetchYoutubeStreamUrl(streamUrl);
-    }
-  }
-
-  setup();
-
-  return () => {
-    stopAnalysis();
-  }
-}, [isAnalyzing, videoSource, videoFile, streamUrl, framework, model])
-
+  setupMjpegStream();
+}, [videoSource, streamUrl, isAnalyzing]);
 
 
 
