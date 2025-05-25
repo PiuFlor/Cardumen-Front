@@ -4,7 +4,8 @@ import type React from "react"
 import { Label } from "./ui/label"
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group"
 import { Input } from "./ui/input"
-import { Camera, Upload, Link } from "lucide-react"
+import { Camera, Upload, Link, Loader2 } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 interface VideoSourceProps {
   videoSource: "file" | "webcam" | "stream"
@@ -12,9 +13,26 @@ interface VideoSourceProps {
   setVideoFile: (file: File | null) => void
   streamUrl?: string
   setStreamUrl?: (url: string) => void
+  max_latency: number | null
+  setMax_latency: (latency: number | null) => void
+  isLoading?: boolean;
 }
 
-export default function VideoSource({ videoSource, setVideoSource, setVideoFile, streamUrl, setStreamUrl }: VideoSourceProps) {
+const publicCameras = [
+  { name: "Orlando, US", url: "http://97.68.104.34/mjpg/video.mjpg"},
+  { name: "Ivrea, Italia", url: "http://37.182.240.202:82/cgi-bin/faststream.jpg?stream=half&fps=15&rand=COUNTER"},
+  { name: "Belgrade, Serbia", url: "http://109.206.96.58:8080/cam_1.cgi" },
+];
+
+
+export default function VideoSource({
+  videoSource,
+  setVideoSource,
+  setVideoFile,
+  streamUrl,
+  setStreamUrl, max_latency, setMax_latency,
+  isLoading = false
+}: VideoSourceProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (files && files.length > 0) {
@@ -58,6 +76,51 @@ export default function VideoSource({ videoSource, setVideoSource, setVideoFile,
           </Label>
         </div>
 
+        <div className="pt-2 relative z-0">
+          <Label htmlFor="camera-select" className="block mb-2 text-gray-700">
+            Cámara Pública
+          </Label>
+
+          {isLoading ? (
+            <div className="flex items-center justify-center p-4 border-2 border-pink-200 rounded-md bg-white">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
+              <span>Cargando cámaras...</span>
+            </div>
+          ) : (
+            <Select
+              value={streamUrl}
+              onValueChange={setStreamUrl}
+              disabled={publicCameras.length === 0}
+            >
+              <SelectTrigger
+                id="camera-select"
+                className="border-2 border-pink-200 focus:border-pink-500 bg-white"
+              >
+                <SelectValue
+                  placeholder={
+                    publicCameras.length === 0
+                      ? "No hay cámaras disponibles"
+                      : "Selecciona una cámara pública"
+                  }
+                />
+              </SelectTrigger>
+              {publicCameras.length > 0 && (
+                <SelectContent className="bg-white border-pink-200">
+                  {publicCameras.map((cam) => (
+                    <SelectItem
+                      key={cam.name}
+                      value={cam.url}
+                      className="hover:bg-pink-50 focus:bg-pink-50"
+                    >
+                      {cam.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              )}
+            </Select>
+          )}
+        </div>
+
       </RadioGroup>
 
       {videoSource === "file" && (
@@ -67,6 +130,20 @@ export default function VideoSource({ videoSource, setVideoSource, setVideoFile,
             accept="video/*"
             onChange={handleFileChange}
             className="border-2 border-dashed border-purple-300 hover:border-purple-500 transition-colors py-8 text-center"
+          />
+        </div>
+      )}
+      {videoSource === "webcam" && (
+        <div className="pt-2 space-y-1">
+          <Label htmlFor="maxLatency">Latencia máxima (ms)</Label>
+          <Input
+            id="maxLatency"
+            type="number"
+            placeholder="500"
+            value={max_latency || ''}
+            onChange={(e) => setMax_latency(e.target.value ? Number(e.target.value) : null)}
+            min="0"
+            step="50"
           />
         </div>
       )}
