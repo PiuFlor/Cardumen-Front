@@ -9,6 +9,7 @@ interface VideoDisplayProps {
   isAnalyzing: boolean
   framework: "yolo" | "mediapipe"
   model: string
+  max_latency: number | null
   onProcessingComplete?: (url: string, taskId: string) => void
   processedUrl?: string | null
 }
@@ -20,6 +21,7 @@ export default function VideoDisplay({
   isAnalyzing,
   framework,
   model,
+  max_latency,
   onProcessingComplete,
   processedUrl
 }: VideoDisplayProps) {
@@ -148,7 +150,7 @@ export default function VideoDisplay({
       wsRef.current.close()
     }
     const ws = new WebSocket(
-      `ws://localhost:8000/ws/image?tecnologia=${framework}&modelo=${model}&max_latency=${maxLatency}`
+      `ws://localhost:8000/ws/image?tecnologia=${framework}&modelo=${model}&max_latency=${max_latency}`
     )
     wsRef.current = ws
 

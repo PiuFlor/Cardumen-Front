@@ -12,6 +12,7 @@ export default function App() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [framework, setFramework] = useState<"yolo" | "mediapipe">("yolo");
   const [model, setModel] = useState<string>("");
+  const [max_latency, setMax_latency] = useState<number | null>(500);
   const [streamUrl, setStreamUrl] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
@@ -115,6 +116,8 @@ export default function App() {
                   setVideoFile={setVideoFile}
                   streamUrl={streamUrl}
                   setStreamUrl={setStreamUrl}
+                  max_latency={max_latency}
+                  setMax_latency={setMax_latency}
                   isLoading={false}
                 />
               </CardContent>
@@ -181,6 +184,7 @@ export default function App() {
                   isAnalyzing={isAnalyzing}
                   framework={framework}
                   model={model}
+                  max_latency={max_latency}
                   onProcessingComplete={handleProcessingComplete}
                   processedUrl={processedVideoUrl}
                   streamUrl={streamUrl}
