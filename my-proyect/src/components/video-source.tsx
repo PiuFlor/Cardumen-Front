@@ -4,14 +4,14 @@ import type React from "react"
 import { Label } from "./ui/label"
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group"
 import { Input } from "./ui/input"
-import { Camera, Upload, Link, Loader2 } from "lucide-react"
+import { Camera, Upload, Link } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 interface VideoSourceProps {
   videoSource: "file" | "webcam" | "stream"
   setVideoSource: (source: "file" | "webcam" | "stream") => void
   setVideoFile: (file: File | null) => void
-  streamUrl?: string
+  streamUrl: string
   setStreamUrl?: (url: string) => void
   max_latency: number | null
   setMax_latency: (latency: number | null) => void
@@ -31,7 +31,6 @@ export default function VideoSource({
   setVideoFile,
   streamUrl,
   setStreamUrl, max_latency, setMax_latency,
-  isLoading = false
 }: VideoSourceProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -72,53 +71,8 @@ export default function VideoSource({
           <RadioGroupItem value="stream" id="stream" className="text-purple-600" />
           <Label htmlFor="stream" className="flex items-center cursor-pointer">
             <Link className="mr-2 h-4 w-4 text-purple-600" />
-            <span>Stream (URL)</span>
+            <span>Stream</span>
           </Label>
-        </div>
-
-        <div className="pt-2 relative z-0">
-          <Label htmlFor="camera-select" className="block mb-2 text-gray-700">
-            Cámara Pública
-          </Label>
-
-          {isLoading ? (
-            <div className="flex items-center justify-center p-4 border-2 border-pink-200 rounded-md bg-white">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin text-pink-600" />
-              <span>Cargando cámaras...</span>
-            </div>
-          ) : (
-            <Select
-              value={streamUrl}
-              onValueChange={setStreamUrl}
-              disabled={publicCameras.length === 0}
-            >
-              <SelectTrigger
-                id="camera-select"
-                className="border-2 border-pink-200 focus:border-pink-500 bg-white"
-              >
-                <SelectValue
-                  placeholder={
-                    publicCameras.length === 0
-                      ? "No hay cámaras disponibles"
-                      : "Selecciona una cámara pública"
-                  }
-                />
-              </SelectTrigger>
-              {publicCameras.length > 0 && (
-                <SelectContent className="bg-white border-pink-200">
-                  {publicCameras.map((cam) => (
-                    <SelectItem
-                      key={cam.name}
-                      value={cam.url}
-                      className="hover:bg-pink-50 focus:bg-pink-50"
-                    >
-                      {cam.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              )}
-            </Select>
-          )}
         </div>
 
       </RadioGroup>
@@ -149,7 +103,24 @@ export default function VideoSource({
       )}
       {videoSource === "stream" && (
         <div className="pt-2 space-y-1">
-          <Label htmlFor="streamUrl">URL del Stream (YouTube o RTMP)</Label>
+          <Label htmlFor="publicCameras">Cámaras Públicas</Label>
+          <Select onValueChange={(value) => setStreamUrl?.(value)}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Selecciona una cámara" />
+            </SelectTrigger>
+            <SelectContent className="bg-white">
+              {publicCameras.map((camera) => (
+                <SelectItem key={camera.name} value={camera.url}>
+                  {camera.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {videoSource === "stream" && (
+        <div className="pt-2 space-y-1">
+          <Label htmlFor="streamUrl">URL del Stream</Label>
           <Input
             id="streamUrl"
             type="text"
@@ -159,6 +130,7 @@ export default function VideoSource({
           />
         </div>
       )}
+
     </div>
   )
 }
