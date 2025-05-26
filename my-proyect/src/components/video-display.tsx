@@ -60,7 +60,8 @@ export default function VideoDisplay({
         lowered.includes(".cgi") ||
         lowered.includes("faststream") ||
         lowered.includes("video") ||
-        lowered.includes(".jpg")
+        lowered.includes(".jpg") ||
+        lowered.includes("getoneshot")
       )
     );
   };
@@ -511,6 +512,13 @@ useEffect(() => {
   setupMjpegStream();
 }, [videoSource, streamUrl, isAnalyzing]);
 
+useEffect(() => {
+  if (!isAnalyzing) return;
+
+    stopAnalysis();
+    setStatus("Cambio de URL detectado. Análisis detenido.");
+
+}, [streamUrl]);
 
 
   return (

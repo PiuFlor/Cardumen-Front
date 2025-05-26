@@ -21,7 +21,10 @@ interface VideoSourceProps {
 const publicCameras = [
   { name: "Orlando, US", url: "http://97.68.104.34/mjpg/video.mjpg"},
   { name: "Ivrea, Italia", url: "http://37.182.240.202:82/cgi-bin/faststream.jpg?stream=half&fps=15&rand=COUNTER"},
-  { name: "Belgrade, Serbia", url: "http://109.206.96.58:8080/cam_1.cgi" },
+  { name: "Belgrade, Serbia", url: "http://109.206.96.58:8080/cam_1.cgi"},
+  { name: "California, US (Autos)", url: "http://76.80.75.130:81/mjpg/video.mjpg"},
+  { name: "Osaka, Japón (Fábrica)", url: "http://153.156.230.207:8081/-wvhttp-01-/GetOneShot?image_size=640x480&frame_count=1000000000"},
+  
 ];
 
 

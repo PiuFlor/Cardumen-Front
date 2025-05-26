@@ -102,9 +102,9 @@ export default function App() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 ">
           {/* Panel de control izquierdo */}
-          <div className="lg:col-span-1 space-y-6">
+          <div className="lg:col-span-1 space-y-6 overflow-y-auto max-h-full pr-2">
             {/* Selección de fuente de video */}
             <Card className="overflow-hidden border-none shadow-lg bg-white">
               <div className="bg-gradient-to-r from-purple-500 to-indigo-600 py-3 px-4">
