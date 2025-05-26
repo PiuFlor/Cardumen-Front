@@ -6,6 +6,7 @@ import ResultsModal from "./components/results-modal";
 import { Button } from "./components/ui/button";
 import { Card, CardContent } from "./components/ui/card";
 import { Camera, Film, Play, Square, BarChart2 } from "lucide-react";
+import ParametersSelector from "./components/parameters-selector";
 
 export default function App() {
   const [videoSource, setVideoSource] = useState<"file" | "webcam" | "stream">("webcam");
@@ -23,6 +24,9 @@ export default function App() {
     mediapipe: ["efficientdet_lite0_pf32.tflite","efficientdet_lite0_int8.tflite", "efficientdet_lite0_pf16.tflite", "ssd_mobilenet_v2_int8.tflite", "ssd_mobilenet_v2_pf32.tflite"]
   });
   const [isLoadingModels, setIsLoadingModels] = useState<boolean>(false);
+  
+  const [fps, setFps] = useState("0");
+  const [resolution, setResolution] = useState("0");
 
   // Cargar modelos disponibles
   useEffect(() => {
@@ -142,7 +146,25 @@ export default function App() {
                 />
               </CardContent>
             </Card>
-
+            {/*Parametros */}
+            {videoSource === "file" && (
+            <Card className="overflow-hidden border-none shadow-lg bg-white">
+              <div className="bg-gradient-to-r from-pink-500 to-rose-500 py-3 px-4">
+                <h2 className="text-white font-semibold flex items-center">
+                  <Film className="mr-2 h-5 w-5" />
+                  Parametros
+                </h2>
+              </div>
+              <CardContent className="pt-6">
+                <ParametersSelector
+                    fps={fps}
+                    setFps={setFps}
+                    resolution={resolution}
+                    setResolution={setResolution}
+                  />
+              </CardContent>
+            </Card>
+            )}
             {/* Botón de análisis */}
             <Button
               className="w-full py-6 text-lg shadow-lg transition-all duration-300 hover:scale-105 bg-blue-600 hover:bg-blue-700 text-white"
@@ -188,6 +210,8 @@ export default function App() {
                   onProcessingComplete={handleProcessingComplete}
                   processedUrl={processedVideoUrl}
                   streamUrl={streamUrl}
+                  fps={fps}
+                  res={resolution}
                 />
               </CardContent>
             </Card>

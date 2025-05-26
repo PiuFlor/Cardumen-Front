@@ -7,6 +7,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { FileDown, FileText } from "lucide-react"
 import { jsPDF } from "jspdf"
 
+export interface Resolution {
+  width: number
+  height: number
+}
 export interface MetricsData {
   cpu_usage: number
   wall_clock_time: number
@@ -15,6 +19,10 @@ export interface MetricsData {
   avg_processing_time: number
   total_frames: number
   current_fps: number
+  original_fps:number
+  processed_fps: number
+  original_resolution:Resolution
+  processed_resolution:Resolution
 }
 
 interface ResultsModalProps {
@@ -139,6 +147,12 @@ export default function ResultsModal({ isOpen, onClose, videoFile, framework, mo
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div className="text-gray-500">Video:</div>
               <div className="font-medium truncate">{videoFile || "N/A"}</div>
+              
+              <div className="text-gray-500">FPS Original \ Procesado:</div>
+              <div className="font-medium truncate">{metrics?.original_fps} \ {metrics?.processed_fps} </div>
+
+              <div className="text-gray-500">Resolución Original \ Procesado:</div>
+              <div className="font-medium truncate"> {metrics?.original_resolution.width}x{metrics?.original_resolution.height} \ {metrics?.processed_resolution.width}x{metrics?.processed_resolution.height}</div>
 
               <div className="text-gray-500">Framework:</div>
               <div className="font-medium">{framework}</div>

@@ -12,6 +12,8 @@ interface VideoDisplayProps {
   max_latency: number | null
   onProcessingComplete?: (url: string, taskId: string) => void
   processedUrl?: string | null
+  fps: string
+  res: string
 }
 
 export default function VideoDisplay({
@@ -23,7 +25,9 @@ export default function VideoDisplay({
   model,
   max_latency,
   onProcessingComplete,
-  processedUrl
+  processedUrl,
+  fps,
+  res
 }: VideoDisplayProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -322,6 +326,8 @@ export default function VideoDisplay({
     formData.append('file', videoFile!)
     formData.append('tecnologia', framework)
     formData.append('modelo', model)
+    formData.append('fps', fps)
+    formData.append('res', res)
 
     try {
       const uploadResponse = await fetch('http://localhost:8000/upload', {

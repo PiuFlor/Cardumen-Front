@@ -22,7 +22,6 @@ export const uploadFile = async (file, technology = "yolo", model = "yolov8n") =
   formData.append("file", file);
   formData.append("tecnologia", technology);
   formData.append("modelo", model);
-
   const endpoint = file.type.startsWith('video/') ? 
     `${API_BASE_URL}/upload/video` : 
     `${API_BASE_URL}/upload/image`;
