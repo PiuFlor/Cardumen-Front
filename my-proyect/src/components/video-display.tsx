@@ -1,6 +1,5 @@
 "use client"
 import { useEffect, useRef, useState, useCallback } from "react"
-import Hls from "hls.js"
 
 interface VideoDisplayProps {
   videoSource: "file" | "webcam" | "stream"
@@ -46,8 +45,22 @@ export default function VideoDisplay({
 
 
   const isMjpegUrl = (url: string | null): boolean => {
-    return !!url && url.includes(".jpg") && url.includes("stream=");
-  }
+    if (!url) return false;
+    
+    const lowered = url.toLowerCase();
+
+    return (
+      lowered.startsWith("http") &&
+      (
+        lowered.includes(".mjpg") ||
+        lowered.includes(".cgi") ||
+        lowered.includes("faststream") ||
+        lowered.includes("video") ||
+        lowered.includes(".jpg")
+      )
+    );
+  };
+
 
   const startWebcam = async () => {
   try {
@@ -145,7 +158,6 @@ export default function VideoDisplay({
 
   const connectWebSocket = () => {
     setStatus("Conectando al servidor...")
-    const maxLatency = 500
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.close()
     }
@@ -441,6 +453,7 @@ export default function VideoDisplay({
     const setupStream = async () => {
       if (videoSource === "stream" && streamUrl && isAnalyzing && !isMjpegUrl(streamUrl)) {
         try {
+          console.log("ENTRO ACA")
           setStatus("Obteniendo URL del stream de YouTube...");
           const endpoint = `http://localhost:8000/get_youtube_stream_url?youtube_url=${encodeURIComponent(streamUrl)}`;
           const res = await fetch(endpoint);
@@ -460,49 +473,6 @@ export default function VideoDisplay({
 
   }, [videoSource, streamUrl, isAnalyzing]);
   
-useEffect(() => {
-  const reproducirYConectar = async () => {
-    if (videoSource === "stream" && youtubeStreamUrl && videoRef.current) {
-      const video = videoRef.current;
-
-      try {
-        if (video.canPlayType("application/vnd.apple.mpegurl")) {
-          video.src = youtubeStreamUrl;
-          await video.play();
-          setStatus("Reproduciendo stream (nativo)");
-          if (isAnalyzing) connectWebSocket();
-        } else if (Hls.isSupported()) {
-          const hls = new Hls();
-          hls.loadSource(`http://localhost:8000/proxy_stream?url=${encodeURIComponent(youtubeStreamUrl)}`)
-          hls.attachMedia(video);
-
-          hls.on(Hls.Events.MANIFEST_PARSED, async () => {
-            try {
-              await video.play();
-              setStatus("Reproduciendo stream (HLS.js)");
-              if (isAnalyzing) connectWebSocket();
-            } catch (err) {
-              console.error("No se pudo reproducir el stream con HLS.js:", err);
-              setStatus("Error reproduciendo stream");
-            }
-          });
-
-          hls.on(Hls.Events.ERROR, (event, data) => {
-            console.error("HLS.js error", data);
-            setStatus("Error en reproducción de HLS");
-          });
-        } else {
-          setStatus("Este navegador no soporta reproducción HLS");
-        }
-      } catch (e) {
-        console.error("No se pudo reproducir el stream:", e);
-        setStatus("Error reproduciendo stream");
-      }
-    }
-  };
-
-  reproducirYConectar();
-}, [videoSource, youtubeStreamUrl, isAnalyzing]);
 
 useEffect(() => {
   const setupMjpegStream = async () => {
@@ -561,18 +531,6 @@ useEffect(() => {
               isAnalyzing ? 'hidden' : 'block'
             }`}
           />
-          {/* {videoSource === 'stream' || !isAnalyzing ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              controls
-              className="w-full h-full object-contain"
-              onError={() => setStatus("Error al cargar video")}
-              src={videoSource === "stream" ? youtubeStreamUrl || undefined : undefined}
-            />
-          ) : null} */}
           <canvas
             ref={processedCanvasRef}
             className={`w-full h-full object-contain ${
