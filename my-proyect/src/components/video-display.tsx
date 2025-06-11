@@ -654,7 +654,7 @@ useEffect(() => {
         <canvas ref={canvasRef} className="hidden" />
       </div>
 
-      {processedUrl && (
+      {processedUrl && framework === "yolo" && (
         <div className="w-64 bg-white flex flex-col h-full">
           <div className="p-4 flex-1 overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">IDs Detectados</h3>
