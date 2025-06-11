@@ -39,7 +39,11 @@ export default function VideoDisplay({
   const frameIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
-  const [youtubeStreamUrl, setYoutubeStreamUrl] = useState<string | null>(null);
+  const [youtubeStreamUrl, setYoutubeStreamUrl] = useState<string | null>(null)
+  const [boxIds, setBoxIds] = useState<string[]>([])
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [processedVideoId, setProcessedVideoId] = useState<string | null>(null)
+  const [filteredVideoUrl, setFilteredVideoUrl] = useState<string | null>(null)
 
   
   // Buffer para almacenar frames procesados
@@ -282,7 +286,7 @@ export default function VideoDisplay({
           const videoUrl = `http://localhost:8000/${data.output_path}`
           onProcessingComplete(videoUrl, data.task_id)
           setStatus("Procesamiento completado")
-          setCurrentTaskId(null)
+          setProcessedVideoId(data.task_id)
           if (renderRequestRef.current) {
             cancelAnimationFrame(renderRequestRef.current)
             renderRequestRef.current = null
@@ -520,60 +524,170 @@ useEffect(() => {
 
 }, [streamUrl]);
 
+  const fetchBoxIds = async (taskId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/videos/${taskId}/box_ids`)
+      if (!response.ok) throw new Error("Error al cargar IDs")
+      const data = await response.json()
+      console.log("data", data)
+      setBoxIds(data.box_ids || [])
+    } catch (error) {
+      console.error("Error fetching box IDs:", error)
+      setBoxIds([])
+    }
+  }
+
+  const toggleIdSelection = (id: string) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  const fetchFilteredVideo = async () => {
+    if (!processedVideoId || selectedIds.size === 0) return
+
+    try {
+      const response = await fetch(`http://localhost:8000/videos/${processedVideoId}/boxes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(Array.from(selectedIds).map(id => parseInt(id)))
+      })
+
+      if (!response.ok) throw new Error("Error al obtener video filtrado")
+      
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      setFilteredVideoUrl(url)
+    } catch (error) {
+      console.error("Error fetching filtered video:", error)
+      setStatus("Error al obtener video filtrado")
+    }
+  }
 
   return (
-    <div className="relative w-full h-full bg-black rounded-lg overflow-hidden">
-      {processedUrl ? (
-        <video
-          key={processedUrl}
-          src={processedUrl}
-          className="w-full h-full object-contain"
-          controls
-          muted
-          playsInline
-          autoPlay
-          onError={() => setStatus("Error al cargar video")}
-        />
-      ) : (
-        <>
+    <div className="relative w-full h-full bg-black rounded-lg overflow-hidden flex">
+      <div className="flex-1 relative">
+        {filteredVideoUrl ? (
           <video
-            ref={videoRef}
-            autoPlay
-            playsInline
+            key={filteredVideoUrl}
+            src={filteredVideoUrl}
+            className="w-full h-full object-contain"
+            controls
             muted
-            className={`w-full h-full object-contain ${
-              isAnalyzing ? 'hidden' : 'block'
-            }`}
+            playsInline
+            autoPlay
+            preload="auto"
+            crossOrigin="anonymous"
+            onError={() => setStatus("Error al cargar video")}
+            onLoadedData={() => setStatus("Video filtrado cargado")}
           />
-          <canvas
-            ref={processedCanvasRef}
-            className={`w-full h-full object-contain ${
-              isAnalyzing ? 'block' : 'hidden'
-            }`}
+        ) : processedUrl ? (
+          <video
+            key={processedUrl}
+            src={processedUrl}
+            className="w-full h-full object-contain"
+            controls
+            muted
+            playsInline
+            autoPlay
+            preload="auto"
+            crossOrigin="anonymous"
+            onError={() => setStatus("Error al cargar video")}
+            onLoadedData={() => {
+              setStatus("Video procesado")
+              console.log("processedVideoId", processedVideoId)
+              if (processedVideoId) {
+                fetchBoxIds(processedVideoId)
+              }
+            }}
           />
-        </>
-      )}
-      
-      {isProcessing && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70">
-          <div className="text-white text-center p-4 rounded-lg">
-            <div className="animate-pulse text-xl mb-2">Procesando...</div>
-            <div className="text-sm">{status}</div>
+        ) : (
+          <>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={`w-full h-full object-contain ${
+                isAnalyzing ? 'hidden' : 'block'
+              }`}
+            />
+            <canvas
+              ref={processedCanvasRef}
+              className={`w-full h-full object-contain ${
+                isAnalyzing ? 'block' : 'hidden'
+              }`}
+            />
+          </>
+        )}
+        
+        {isProcessing && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-70">
+            <div className="text-white text-center p-4 rounded-lg">
+              <div className="animate-pulse text-xl mb-2">Procesando...</div>
+              <div className="text-sm">{status}</div>
+            </div>
+          </div>
+        )}
+
+        {(!processedUrl) && (
+          <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-3 py-1 rounded-md text-sm">
+            {status}
+          </div>
+        )}
+
+        {isAnalyzing && (
+          <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white px-3 py-1 rounded-md text-sm">
+            {framework} - {model}
+          </div>
+        )}
+        
+        <canvas ref={canvasRef} className="hidden" />
+      </div>
+
+      {processedUrl && (
+        <div className="w-64 bg-white flex flex-col h-full">
+          <div className="p-4 flex-1 overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-4">IDs Detectados</h3>
+            <div className="space-y-2">
+              {boxIds.map((id) => (
+                <div
+                  key={id}
+                  className={`p-2 rounded cursor-pointer transition-colors ${
+                    selectedIds.has(id)
+                      ? 'bg-blue-100 border border-blue-300'
+                      : 'hover:bg-gray-100 border border-gray-200'
+                  }`}
+                  onClick={() => toggleIdSelection(id)}
+                >
+                  ID: {id}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="p-4 border-t border-gray-200">
+            <button
+              onClick={fetchFilteredVideo}
+              disabled={selectedIds.size === 0}
+              className={`w-full text-sm py-2 px-4 rounded-md transition-colors ${
+                selectedIds.size === 0
+                  ? 'bg-gray-300 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
+            >
+              Mostrar IDs seleccionados ({selectedIds.size})
+            </button>
           </div>
         </div>
       )}
-      
-      <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-3 py-1 rounded-md text-sm">
-        {status}
-      </div>
-      
-      {isAnalyzing && (
-        <div className="absolute top-2 left-2 bg-black bg-opacity-70 text-white px-3 py-1 rounded-md text-sm">
-          {framework} - {model}
-        </div>
-      )}
-      
-      <canvas ref={canvasRef} className="hidden" />
     </div>
   )
 }
