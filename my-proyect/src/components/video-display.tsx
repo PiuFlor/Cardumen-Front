@@ -547,6 +547,7 @@ useEffect(() => {
       }
       return newSet
     })
+    setFilteredVideoUrl(null)  // Clear filtered video when selection changes
   }
 
   const fetchFilteredVideo = async () => {
@@ -575,7 +576,7 @@ useEffect(() => {
   return (
     <div className="relative w-full h-full bg-black rounded-lg overflow-hidden flex">
       <div className="flex-1 relative">
-        {filteredVideoUrl ? (
+        {filteredVideoUrl && selectedIds.size > 0 ? (
           <video
             key={filteredVideoUrl}
             src={filteredVideoUrl}
