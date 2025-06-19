@@ -1,9 +1,13 @@
 "use client"
 import { useEffect, useRef, useState, useCallback } from "react"
+import { Button } from "./ui/button"
+import { COLOR_PALETTE } from "../utils/constants"
+import { getColorForId } from "../utils/colorUtils"
+import { VideoControls } from "./video-controls"
 
 interface VideoDisplayProps {
   videoSource: "file" | "webcam" | "stream"
-  streamUrl?: string  // para fuente YouTube
+  streamUrl?: string
   videoFile: File | null
   isAnalyzing: boolean
   framework: "yolo" | "mediapipe"
@@ -31,6 +35,7 @@ export default function VideoDisplay({
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const processedCanvasRef = useRef<HTMLCanvasElement>(null)
+  const videoPlayerRef = useRef<HTMLVideoElement>(null)
   const [status, setStatus] = useState("Presiona 'Iniciar Análisis'")
   const [isProcessing, setIsProcessing] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
@@ -44,19 +49,81 @@ export default function VideoDisplay({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [processedVideoId, setProcessedVideoId] = useState<string | null>(null)
   const [filteredVideoUrl, setFilteredVideoUrl] = useState<string | null>(null)
+  const [showTrajectory, setShowTrajectory] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [seekValue, setSeekValue] = useState(0)
 
-  
   // Buffer para almacenar frames procesados
   const frameBufferRef = useRef<{timestamp: number, image: string}[]>([])
   const lastRenderTimeRef = useRef<number>(0)
   const renderRequestRef = useRef<number | null>(null)
 
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
+  const togglePlayPause = () => {
+    if (videoPlayerRef.current) {
+      if (isPlaying) {
+        videoPlayerRef.current.pause();
+      } else {
+        videoPlayerRef.current.play();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    if (videoPlayerRef.current) {
+      setCurrentTime(videoPlayerRef.current.currentTime);
+      setSeekValue(videoPlayerRef.current.currentTime);
+    }
+  };
+
+  const handleLoadedMetadata = () => {
+    if (videoPlayerRef.current) {
+      setDuration(videoPlayerRef.current.duration);
+      setSeekValue(0);
+    }
+  };
+
+  const seek = (seconds: number) => {
+    if (videoPlayerRef.current) {
+      videoPlayerRef.current.currentTime += seconds;
+      setCurrentTime(videoPlayerRef.current.currentTime);
+      setSeekValue(videoPlayerRef.current.currentTime);
+    }
+  };
+
+  const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    setSeekValue(newTime);
+    if (videoPlayerRef.current) {
+      videoPlayerRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+    }
+  };
+
+  const restartVideo = () => {
+    if (videoPlayerRef.current) {
+      videoPlayerRef.current.currentTime = 0;
+      setCurrentTime(0);
+      setSeekValue(0);
+      if (!isPlaying) {
+        videoPlayerRef.current.play();
+        setIsPlaying(true);
+      }
+    }
+  };
 
   const isMjpegUrl = (url: string | null): boolean => {
     if (!url) return false;
     
     const lowered = url.toLowerCase();
-
     return (
       lowered.startsWith("http") &&
       (
@@ -70,72 +137,63 @@ export default function VideoDisplay({
     );
   };
 
-
   const startWebcam = async () => {
-  try {
-    setStatus("Iniciando cámara...");
-    
-    // 1. Detener cualquier stream existente primero
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-    }
-
-    // 2. Intentar con constraints más flexibles
-    const constraints = {
-      video: {
-        width: { min: 320, ideal: 640, max: 1280 },
-        height: { min: 240, ideal: 480, max: 720 },
-        frameRate: { min: 15, ideal: 30 }
-      } 
-    };
-
-    const stream = await navigator.mediaDevices.getUserMedia(constraints)
-      .catch(async (err) => {
-        // Fallback: intentar sin restricciones si falla
-        console.warn("Intento con restricciones falló, probando sin restricciones...", err);
-        return await navigator.mediaDevices.getUserMedia({ video: true });
-      });
-
-    streamRef.current = stream;
-
-    // 3. Configurar el video
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
+    try {
+      setStatus("Iniciando cámara...");
       
-      // Esperar a que el video esté listo
-      await new Promise((resolve, reject) => {
-        if (!videoRef.current) return reject();
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+
+      const constraints = {
+        video: {
+          width: { min: 320, ideal: 640, max: 1280 },
+          height: { min: 240, ideal: 480, max: 720 },
+          frameRate: { min: 15, ideal: 30 }
+        } 
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        .catch(async (err) => {
+          console.warn("Intento con restricciones falló, probando sin restricciones...", err);
+          return await navigator.mediaDevices.getUserMedia({ video: true });
+        });
+
+      streamRef.current = stream;
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
         
-        videoRef.current.onloadedmetadata = resolve;
-        videoRef.current.onerror = () => reject(new Error("Error al cargar video"));
-      });
+        await new Promise((resolve, reject) => {
+          if (!videoRef.current) return reject();
+          
+          videoRef.current.onloadedmetadata = resolve;
+          videoRef.current.onerror = () => reject(new Error("Error al cargar video"));
+        });
 
-      // Intentar reproducir
-      await videoRef.current.play().catch(e => {
-        throw new Error(`No se pudo reproducir: ${e.message}`);
-      });
+        await videoRef.current.play().catch(e => {
+          throw new Error(`No se pudo reproducir: ${e.message}`);
+        });
 
-      setStatus("Cámara lista");
+        setStatus("Cámara lista");
+        
+        if (isAnalyzing) {
+          connectWebSocket();
+        }
+      }
+    } catch (error) {
+      console.error("Error detallado:", error);
+      setStatus(`Error: ${error instanceof Error ? error.message : "Falló la cámara"}`);
       
-      // 4. Iniciar análisis automáticamente si está habilitado
-      if (isAnalyzing) {
-        connectWebSocket();
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
       }
     }
-  } catch (error) {
-    console.error("Error detallado:", error);
-    setStatus(`Error: ${error instanceof Error ? error.message : "Falló la cámara"}`);
-    
-    // Limpiar en caso de error
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  }
-};
+  };
 
   const renderProcessedFrames = useCallback(() => {
     const now = performance.now()
@@ -431,6 +489,66 @@ export default function VideoDisplay({
     }
   }
 
+  const fetchBoxIds = async (taskId: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/videos/${taskId}/box_ids`)
+      if (!response.ok) throw new Error("Error al cargar IDs")
+      const data = await response.json()
+      console.log("data", data)
+      setBoxIds(data.box_ids || [])
+    } catch (error) {
+      console.error("Error fetching box IDs:", error)
+      setBoxIds([])
+    }
+  }
+
+  const toggleIdSelection = (id: string) => {
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+    setFilteredVideoUrl(null);
+  };
+
+  const fetchFilteredVideo = async () => {
+    if (!processedVideoId || selectedIds.size === 0) return;
+
+    try {
+      const response = await fetch(`http://localhost:8000/videos/${processedVideoId}/boxes`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          box_ids: Array.from(selectedIds).map(id => parseInt(id)),
+          show_trajectory: showTrajectory
+        })
+      });
+
+      if (!response.ok) throw new Error("Error al obtener video filtrado")
+      
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      setFilteredVideoUrl(url)
+      
+      // Auto-play the video after setting the URL
+      setTimeout(() => {
+        if (videoPlayerRef.current) {
+          videoPlayerRef.current.play()
+          setIsPlaying(true)
+        }
+      }, 100)
+    } catch (error) {
+      console.error("Error fetching filtered video:", error)
+      setStatus("Error al obtener video filtrado")
+    }
+  }
+
   useEffect(() => {
     if (videoSource === "webcam" && !processedUrl) {
       startWebcam()
@@ -459,7 +577,6 @@ export default function VideoDisplay({
     }
   }, [isAnalyzing, videoFile, processedUrl])
 
-
   useEffect(() => {
     const setupStream = async () => {
       if (videoSource === "stream" && streamUrl && isAnalyzing && !isMjpegUrl(streamUrl)) {
@@ -481,135 +598,128 @@ export default function VideoDisplay({
       }
     };
     setupStream();
-
   }, [videoSource, streamUrl, isAnalyzing]);
-  
 
-useEffect(() => {
-  const setupMjpegStream = async () => {
-    if (videoSource === "stream" && streamUrl && isAnalyzing && isMjpegUrl(streamUrl)) {
-      try {
-        setStatus("Iniciando análisis de stream MJPEG...");
+  useEffect(() => {
+    const setupMjpegStream = async () => {
+      if (videoSource === "stream" && streamUrl && isAnalyzing && isMjpegUrl(streamUrl)) {
+        try {
+          setStatus("Iniciando análisis de stream MJPEG...");
 
-        const formData = new FormData();
-        formData.append("stream_url", streamUrl);
-        formData.append("tecnologia", framework);
-        formData.append("modelo", model);
+          const formData = new FormData();
+          formData.append("stream_url", streamUrl);
+          formData.append("tecnologia", framework);
+          formData.append("modelo", model);
 
-        const res = await fetch("http://localhost:8000/upload/stream", {
-          method: "POST",
-          body: formData
-        });
+          const res = await fetch("http://localhost:8000/upload/stream", {
+            method: "POST",
+            body: formData
+          });
 
-        if (!res.ok) throw new Error("Error enviando stream MJPEG");
+          if (!res.ok) throw new Error("Error enviando stream MJPEG");
 
-        const { task_id } = await res.json();
-        connectFileWebSocket(task_id);  // Usa mismo mecanismo que para archivos
-        setStatus("Stream MJPEG conectado");
-      } catch (e) {
-        console.error("❌ Error MJPEG:", e);
-        setStatus("Error iniciando stream MJPEG");
+          const { task_id } = await res.json();
+          connectFileWebSocket(task_id);
+          setStatus("Stream MJPEG conectado");
+        } catch (e) {
+          console.error("❌ Error MJPEG:", e);
+          setStatus("Error iniciando stream MJPEG");
+        }
       }
-    }
-  };
+    };
 
-  setupMjpegStream();
-}, [videoSource, streamUrl, isAnalyzing]);
+    setupMjpegStream();
+  }, [videoSource, streamUrl, isAnalyzing]);
 
-useEffect(() => {
-  if (!isAnalyzing) return;
+  useEffect(() => {
+    if (!isAnalyzing) return;
 
     stopAnalysis();
     setStatus("Cambio de URL detectado. Análisis detenido.");
-
-}, [streamUrl]);
-
-  const fetchBoxIds = async (taskId: string) => {
-    try {
-      const response = await fetch(`http://localhost:8000/videos/${taskId}/box_ids`)
-      if (!response.ok) throw new Error("Error al cargar IDs")
-      const data = await response.json()
-      console.log("data", data)
-      setBoxIds(data.box_ids || [])
-    } catch (error) {
-      console.error("Error fetching box IDs:", error)
-      setBoxIds([])
-    }
-  }
-
-  const toggleIdSelection = (id: string) => {
-    setSelectedIds(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(id)) {
-        newSet.delete(id)
-      } else {
-        newSet.add(id)
-      }
-      return newSet
-    })
-    setFilteredVideoUrl(null)  // Clear filtered video when selection changes
-  }
-
-  const fetchFilteredVideo = async () => {
-    if (!processedVideoId || selectedIds.size === 0) return
-
-    try {
-      const response = await fetch(`http://localhost:8000/videos/${processedVideoId}/boxes`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(Array.from(selectedIds).map(id => parseInt(id)))
-      })
-
-      if (!response.ok) throw new Error("Error al obtener video filtrado")
-      
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      setFilteredVideoUrl(url)
-    } catch (error) {
-      console.error("Error fetching filtered video:", error)
-      setStatus("Error al obtener video filtrado")
-    }
-  }
+  }, [streamUrl]);
 
   return (
     <div className="relative w-full h-full bg-black rounded-lg overflow-hidden flex">
       <div className="flex-1 relative">
         {filteredVideoUrl && selectedIds.size > 0 ? (
-          <video
-            key={filteredVideoUrl}
-            src={filteredVideoUrl}
-            className="w-full h-full object-contain"
-            controls
-            muted
-            playsInline
-            autoPlay
-            preload="auto"
-            crossOrigin="anonymous"
-            onError={() => setStatus("Error al cargar video")}
-            onLoadedData={() => setStatus("Video filtrado cargado")}
-          />
+          <div className="relative w-full h-full">
+            <video
+              ref={videoPlayerRef}
+              key={filteredVideoUrl}
+              src={filteredVideoUrl}
+              className="w-full h-full object-contain"
+              controls={false}
+              muted
+              playsInline
+              autoPlay={false}
+              preload="auto"
+              crossOrigin="anonymous"
+              onTimeUpdate={handleTimeUpdate}
+              onLoadedMetadata={handleLoadedMetadata}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onError={() => setStatus("Error al cargar video")}
+              onLoadedData={() => setStatus("Video filtrado cargado")}
+            />
+            <VideoControls
+              currentTime={currentTime}
+              duration={duration}
+              isPlaying={isPlaying}
+              onPlayPause={togglePlayPause}
+              onSeek={(time) => {
+                if (videoPlayerRef.current) {
+                  videoPlayerRef.current.currentTime = time
+                  setCurrentTime(time)
+                  setSeekValue(time)
+                }
+              }}
+              onForward={(seconds) => seek(seconds)}
+              onBackward={(seconds) => seek(-seconds)}
+              onRestart={restartVideo}
+            />
+          </div>
         ) : processedUrl ? (
-          <video
-            key={processedUrl}
-            src={processedUrl}
-            className="w-full h-full object-contain"
-            controls
-            muted
-            playsInline
-            autoPlay
-            preload="auto"
-            crossOrigin="anonymous"
-            onError={() => setStatus("Error al cargar video")}
-            onLoadedData={() => {
-              setStatus("Video procesado")
-              console.log("processedVideoId", processedVideoId)
-              if (processedVideoId) {
-                fetchBoxIds(processedVideoId)
-              }
-            }}
-          />
+          <div className="relative w-full h-full">
+            <video
+              ref={videoPlayerRef}
+              key={processedUrl}
+              src={processedUrl}
+              className="w-full h-full object-contain"
+              controls={false}
+              muted
+              playsInline
+              autoPlay={false}
+              preload="auto"
+              crossOrigin="anonymous"
+              onTimeUpdate={handleTimeUpdate}
+              onLoadedMetadata={handleLoadedMetadata}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              onError={() => setStatus("Error al cargar video")}
+              onLoadedData={() => {
+                setStatus("Video procesado")
+                if (processedVideoId) {
+                  fetchBoxIds(processedVideoId)
+                }
+              }}
+            />
+            <VideoControls
+              currentTime={currentTime}
+              duration={duration}
+              isPlaying={isPlaying}
+              onPlayPause={togglePlayPause}
+              onSeek={(time) => {
+                if (videoPlayerRef.current) {
+                  videoPlayerRef.current.currentTime = time
+                  setCurrentTime(time)
+                  setSeekValue(time)
+                }
+              }}
+              onForward={(seconds) => seek(seconds)}
+              onBackward={(seconds) => seek(-seconds)}
+              onRestart={restartVideo}
+            />
+                      </div>
         ) : (
           <>
             <video
@@ -639,7 +749,7 @@ useEffect(() => {
           </div>
         )}
 
-        {(!processedUrl) && (
+        {(!processedUrl && !filteredVideoUrl) && (
           <div className="absolute bottom-2 left-2 bg-black bg-opacity-70 text-white px-3 py-1 rounded-md text-sm">
             {status}
           </div>
@@ -662,10 +772,13 @@ useEffect(() => {
               {boxIds.map((id) => (
                 <div
                   key={id}
-                  className={`p-2 rounded cursor-pointer transition-colors ${
-                    selectedIds.has(id)
-                      ? 'bg-blue-100 border border-blue-300'
-                      : 'hover:bg-gray-100 border border-gray-200'
+                  style={{
+                    backgroundColor: selectedIds.has(id) 
+                      ? getColorForId(id, COLOR_PALETTE) 
+                      : "transparent",
+                  }}
+                  className={`p-2 rounded cursor-pointer ${
+                    selectedIds.has(id) ? "text-white" : "text-gray-800"
                   }`}
                   onClick={() => toggleIdSelection(id)}
                 >
@@ -674,7 +787,19 @@ useEffect(() => {
               ))}
             </div>
           </div>
-          <div className="p-4 border-t border-gray-200">
+          <div className="p-4 border-t border-gray-200 space-y-2">
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="show-trajectory"
+                checked={showTrajectory}
+                onChange={() => setShowTrajectory(!showTrajectory)}
+                className="h-4 w-4 text-blue-600 rounded"
+              />
+              <label htmlFor="show-trajectory" className="text-sm">
+                Mostrar trayectorias
+              </label>
+            </div>
             <button
               onClick={fetchFilteredVideo}
               disabled={selectedIds.size === 0}
