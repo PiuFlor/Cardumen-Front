@@ -27,7 +27,7 @@ export function useYolo() {
 
   // Función para procesar un frame con YOLO
   const processFrameYolo = useCallback(
-    (video: HTMLVideoElement, canvas: HTMLCanvasElement, modelName: string) => {
+    (canvas: HTMLCanvasElement, modelName: string) => {
       if (!isModelLoaded || currentModel !== modelName) return
 
       const ctx = canvas.getContext("2d")

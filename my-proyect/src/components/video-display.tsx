@@ -36,10 +36,10 @@ export default function VideoDisplay({
   const wsRef = useRef<WebSocket | null>(null)
   const wsFileRef = useRef<WebSocket | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const frameIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const frameIntervalRef = useRef<number | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
-  const [youtubeStreamUrl, setYoutubeStreamUrl] = useState<string | null>(null)
+  /* const [youtubeStreamUrl, setYoutubeStreamUrl] = useState<string | null>(null) */
   const [boxIds, setBoxIds] = useState<string[]>([])
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [processedVideoId, setProcessedVideoId] = useState<string | null>(null)
@@ -421,7 +421,7 @@ export default function VideoDisplay({
         }
 
         setStatus("Análisis detenido");
-        setYoutubeStreamUrl(null);
+        /* setYoutubeStreamUrl(null); */
     }
     
     frameBufferRef.current = []
@@ -473,7 +473,7 @@ export default function VideoDisplay({
           const data = await res.json();
           if (!data.stream_url) throw new Error("URL del stream vacía");
 
-          setYoutubeStreamUrl(data.stream_url);
+          /* setYoutubeStreamUrl(data.stream_url); */
         } catch (error) {
           console.error("❌ Error obteniendo stream URL:", error);
           setStatus("Error obteniendo stream de YouTube");
@@ -572,6 +572,10 @@ useEffect(() => {
       setStatus("Error al obtener video filtrado")
     }
   }
+  useEffect(() => {
+  // Limpia el video filtrado cuando cambie de fuente o se detenga/analyse
+  setFilteredVideoUrl(null)
+  }, [videoSource, isAnalyzing])
 
   return (
     <div className="relative w-full h-full bg-black rounded-lg overflow-hidden flex">
@@ -592,7 +596,7 @@ useEffect(() => {
           />
         ) : processedUrl ? (
           <video
-            key={processedUrl}
+            key={`processed-${processedUrl}`}
             src={processedUrl}
             className="w-full h-full object-contain"
             controls
