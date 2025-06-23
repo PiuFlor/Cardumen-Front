@@ -216,7 +216,8 @@ export default function App() {
                 />
               </CardContent>
             </Card>
-            <Trayectorias taskId={taskId} />
+            {/* MOSTRAR TRAYECTORIA */}
+            { framework === 'yolo' && processedVideoUrl && (<Trayectorias taskId={taskId}/>)}
           </div>
         </div>
       </div>
