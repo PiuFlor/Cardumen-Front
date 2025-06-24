@@ -16,6 +16,9 @@ interface VideoSourceProps {
   max_latency: number | null
   setMax_latency: (latency: number | null) => void
   isLoading?: boolean;
+  setSelectedCameraId: (cameraId: string) => void;
+  selectedCameraId: string;
+  availableCameras?: MediaDeviceInfo[];
 }
 
 const publicCameras = [
@@ -34,6 +37,9 @@ export default function VideoSource({
   setVideoFile,
   streamUrl,
   setStreamUrl, max_latency, setMax_latency,
+  setSelectedCameraId,
+  selectedCameraId,
+  availableCameras = [],
 }: VideoSourceProps) {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
@@ -41,6 +47,7 @@ export default function VideoSource({
       setVideoFile(files[0])
     }
   }
+
 
   return (
     <div className="space-y-4">
@@ -132,6 +139,19 @@ export default function VideoSource({
             onChange={(e) => setStreamUrl?.(e.target.value)}
           />
         </div>
+      )}
+      {videoSource === "webcam" && availableCameras.length > 1 && (
+        <select
+          value={selectedCameraId}
+          onChange={(e) => setSelectedCameraId(e.target.value)}
+          className="mt-2 px-2 py-1 border border-purple-300 rounded bg-white text-sm focus:outline-none"
+        >
+          {availableCameras.map((device) => (
+            <option key={device.deviceId} value={device.deviceId}>
+              {device.label || `Cámara ${device.deviceId}`}
+            </option>
+          ))}
+        </select>
       )}
 
     </div>

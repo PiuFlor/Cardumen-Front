@@ -13,6 +13,7 @@ interface VideoDisplayProps {
   processedUrl?: string | null
   fps: string
   res: string
+  selectedCameraId: string
 }
 
 export default function VideoDisplay({
@@ -26,7 +27,8 @@ export default function VideoDisplay({
   onProcessingComplete,
   processedUrl,
   fps,
-  res
+  res,
+  selectedCameraId
 }: VideoDisplayProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -39,7 +41,6 @@ export default function VideoDisplay({
   const frameIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null)
-  const [youtubeStreamUrl, setYoutubeStreamUrl] = useState<string | null>(null);
 
   
   // Buffer para almacenar frames procesados
@@ -67,7 +68,7 @@ export default function VideoDisplay({
   };
 
 
-  const startWebcam = async () => {
+  const startWebcam = async (selectedCameraId: string) => {
   try {
     setStatus("Iniciando cámara...");
     
@@ -77,8 +78,9 @@ export default function VideoDisplay({
     }
 
     // 2. Intentar con constraints más flexibles
-    const constraints = {
-      video: {
+    const constraints : MediaStreamConstraints = {
+      video:{ 
+        deviceId: selectedCameraId ? { exact: selectedCameraId } : undefined,
         width: { min: 320, ideal: 640, max: 1280 },
         height: { min: 240, ideal: 480, max: 720 },
         frameRate: { min: 15, ideal: 30 }
@@ -417,7 +419,6 @@ export default function VideoDisplay({
         }
 
         setStatus("Análisis detenido");
-        setYoutubeStreamUrl(null);
     }
     
     frameBufferRef.current = []
@@ -429,7 +430,7 @@ export default function VideoDisplay({
 
   useEffect(() => {
     if (videoSource === "webcam" && !processedUrl) {
-      startWebcam()
+      startWebcam(selectedCameraId)
     }
 
     return () => {
@@ -439,7 +440,7 @@ export default function VideoDisplay({
       }
       setCurrentTaskId(null)
     }
-  }, [videoSource, processedUrl])
+  }, [videoSource, processedUrl, selectedCameraId])
 
   useEffect(() => {
     if (isAnalyzing && videoSource === "webcam") {
@@ -469,7 +470,7 @@ export default function VideoDisplay({
           const data = await res.json();
           if (!data.stream_url) throw new Error("URL del stream vacía");
 
-          setYoutubeStreamUrl(data.stream_url);
+
         } catch (error) {
           console.error("❌ Error obteniendo stream URL:", error);
           setStatus("Error obteniendo stream de YouTube");
