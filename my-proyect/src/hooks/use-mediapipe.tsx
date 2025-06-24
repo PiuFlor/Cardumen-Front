@@ -26,7 +26,7 @@ export function useMediaPipe() {
 
   // Función para procesar un frame con MediaPipe
   const processFrameMediaPipe = useCallback(
-    (video: HTMLVideoElement, canvas: HTMLCanvasElement, modelName: string) => {
+    (canvas: HTMLCanvasElement, modelName: string) => {
       if (!isModelLoaded || currentModel !== modelName) return
 
       const ctx = canvas.getContext("2d")
@@ -191,7 +191,7 @@ export function useMediaPipe() {
     ctx.shadowBlur = 10
     ctx.fillStyle = "#a855f7"
 
-    angles.forEach((angle, index) => {
+    angles.forEach((angle) => {
       const segments = 3 // articulaciones por dedo
       let startX = centerX
       let startY = centerY

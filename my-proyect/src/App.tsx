@@ -7,6 +7,7 @@ import { Button } from "./components/ui/button";
 import { Card, CardContent } from "./components/ui/card";
 import { Camera, Film, Play, Square, BarChart2 } from "lucide-react";
 import ParametersSelector from "./components/parameters-selector";
+import Trayectorias from "./components/trayectorias"
 
 export default function App() {
   const [videoSource, setVideoSource] = useState<"file" | "webcam" | "stream">("webcam");
@@ -212,7 +213,7 @@ export default function App() {
               <div className="bg-gradient-to-r from-blue-500 to-cyan-500 py-3 px-4">
                 <h2 className="text-white font-semibold">
                   {processedVideoUrl ? "Resultado del Análisis" : 
-                   isAnalyzing ? "Análisis en Tiempo Real" : "Vista Previa"}
+                  isAnalyzing ? "Análisis en Tiempo Real" : "Vista Previa"}
                 </h2>
               </div>
               <CardContent className="p-0 aspect-video">
@@ -232,6 +233,8 @@ export default function App() {
                 />
               </CardContent>
             </Card>
+            {/* MOSTRAR TRAYECTORIA */}
+            { framework === 'yolo' && processedVideoUrl && (<Trayectorias taskId={taskId}/>)}
           </div>
         </div>
       </div>
