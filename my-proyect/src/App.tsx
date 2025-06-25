@@ -20,6 +20,8 @@ export default function App() {
   const [processedVideoUrl, setProcessedVideoUrl] = useState<string | null>(null);
   const [showResults, setShowResults] = useState(false);
   const [taskId, setTaskId] = useState<string | null>(null);
+  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState<string>("")
   const [modelOptions, setModelOptions] = useState({
     yolo: ['yolo11n.pt', 'yolo11s.pt', 'yolo11m.pt', 'yolo11l.pt', 'yolo11x.pt'],
     mediapipe: ["efficientdet_lite0_pf32.tflite","efficientdet_lite0_int8.tflite", "efficientdet_lite0_pf16.tflite", "ssd_mobilenet_v2_int8.tflite", "ssd_mobilenet_v2_pf32.tflite"]
@@ -74,6 +76,17 @@ export default function App() {
     setShowResults(false);
   }, [videoFile]);
 
+
+  useEffect(() => {
+    navigator.mediaDevices.enumerateDevices().then(devices => {
+      const videoInputs = devices.filter(d => d.kind === 'videoinput');
+      setAvailableCameras(videoInputs);
+      if (videoInputs.length > 0) {
+        setSelectedCameraId(videoInputs[0].deviceId);
+      }
+    });
+  }, []);
+
   const toggleAnalysis = () => {
     if (isAnalyzing) {
       setIsAnalyzing(false);
@@ -124,6 +137,9 @@ export default function App() {
                   max_latency={max_latency}
                   setMax_latency={setMax_latency}
                   isLoading={false}
+                  setSelectedCameraId={setSelectedCameraId}
+                  selectedCameraId={selectedCameraId}
+                  availableCameras={availableCameras}
                 />
               </CardContent>
             </Card>
@@ -213,6 +229,7 @@ export default function App() {
                   streamUrl={streamUrl}
                   fps={fps}
                   res={resolution}
+                  selectedCameraId={selectedCameraId}
                 />
               </CardContent>
             </Card>
