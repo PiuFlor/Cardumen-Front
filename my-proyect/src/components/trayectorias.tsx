@@ -8,7 +8,12 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "./ui/button";
 import { FileText } from "lucide-react";
 import jsPDF from 'jspdf';
-
+import { 
+  Accordion, 
+  AccordionContent, 
+  AccordionItem, 
+  AccordionTrigger 
+} from '../components/ui/accordion';
 interface Point {
   x: number
   y: number
@@ -58,6 +63,7 @@ export default function Trayectorias({ taskId }: { taskId: string | null }) {
   const [trajectoryAnalysis, setTrajectoryAnalysis] = useState<TrajectoryAnalysis[]>([]);
 
   const [angleSensitivity, setAngleSensitivity] = useState<number>(45)
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
 
   // Estilos
   const axisStyles = {
@@ -743,84 +749,122 @@ export default function Trayectorias({ taskId }: { taskId: string | null }) {
               </div>
             </div>
 
-            {/* Modal de análisis */}
+            {/* Modal de análisis con acordeones */}
             <Dialog open={showAnalysis} onOpenChange={setShowAnalysis}>
-            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto rounded-xl shadow-xl bg-white border border-gray-200">
-              <DialogHeader>
-                <DialogTitle className="text-xl font-bold text-gray-800">Análisis de Trayectorias</DialogTitle>
-                <DialogDescription className="text-sm text-gray-500">
-                  Resultados para los ID seleccionados con sensibilidad de {angleSensitivity}°
-                </DialogDescription>
-                <div className="flex gap-2 mt-2">
-                  <Button variant="outline" onClick={exportTrajectoriesToPdf} disabled={trajectoryAnalysis.length === 0}>
-                    Exportar PDF
-                  </Button>
-                </div>
-              </DialogHeader>
+              <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto rounded-xl shadow-xl bg-white border border-gray-200">
+                <DialogHeader>
+                  <DialogTitle className="text-xl font-bold text-gray-800">Análisis de Trayectorias</DialogTitle>
+                  <DialogDescription className="text-sm text-gray-500">
+                    Resultados para los ID seleccionados con sensibilidad de {angleSensitivity}°
+                  </DialogDescription>
+                  <div className="flex gap-2 mt-2">
+                    <Button variant="outline" onClick={exportTrajectoriesToPdf} disabled={trajectoryAnalysis.length === 0}>
+                      <FileText className="w-4 h-4 mr-2" />
+                      Exportar PDF
+                    </Button>
+                  </div>
+                </DialogHeader>
 
-              <div className="space-y-6 mt-4 px-1">
-                {trajectoryAnalysis.map((item) => (
-                  <div key={item.id} className="border border-gray-200 rounded-lg shadow-sm p-4 bg-gray-50">
-                    <h4 className="font-semibold text-blue-600 text-lg mb-2">ID: {item.id}</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-700 mb-3">
-                      <div>
-                        <div className="text-gray-500">Primera detección</div>
-                        <div>Frame {item.firstDetection} ({(item.firstDetection / 30).toFixed(2)}s)</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500">Última detección</div>
-                        <div>Frame {item.lastDetection} ({(item.lastDetection / 30).toFixed(2)}s)</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500">Duración visible</div>
-                        <div>{item.durationSeconds.toFixed(2)} segundos</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500">Velocidad promedio</div>
-                        <div>{item.averageSpeed.toFixed(2)} px/frame</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500">Distancia total recorrida</div>
-                        <div>{item.totalDistance.toFixed(2)} px</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-500">Cantidad de cambios de dirección</div>
-                        <div>{item.directionChanges.length}</div>
-                      </div>
-                    </div>
+                <div className="space-y-2 mt-4">
+                  {trajectoryAnalysis.map((item) => (
+                    <div key={item.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                      <button
+                        className="flex w-full items-center justify-between p-4 text-left hover:bg-gray-50 transition-colors"
+                        onClick={() => {
+                          const newExpanded = new Set(expandedItems);
+                          if (newExpanded.has(item.id)) {
+                            newExpanded.delete(item.id);
+                          } else {
+                            newExpanded.add(item.id);
+                          }
+                          setExpandedItems(newExpanded);
+                        }}
+                      >
+                        <div className="flex items-center space-x-3">
+                          <div 
+                            className="w-4 h-4 rounded-full" 
+                            style={{ backgroundColor: getColorForId(item.id, COLOR_PALETTE) }}
+                          />
+                          <span className="font-medium">ID: {item.id}</span>
+                          <span className="text-sm text-gray-500">
+                            ({item.directionChanges.length} cambios de dirección)
+                          </span>
+                        </div>
+                        <svg
+                          className={`w-5 h-5 transform transition-transform ${
+                            expandedItems.has(item.id) ? 'rotate-180' : ''
+                          }`}
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                      
+                      {expandedItems.has(item.id) && (
+                        <div className="p-4 bg-gray-50 border-t border-gray-200">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-700 mb-3">
+                            <div>
+                              <div className="text-gray-500">Primera detección</div>
+                              <div>Frame {item.firstDetection} ({(item.firstDetection / 30).toFixed(2)}s)</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500">Última detección</div>
+                              <div>Frame {item.lastDetection} ({(item.lastDetection / 30).toFixed(2)}s)</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500">Duración visible</div>
+                              <div>{item.durationSeconds.toFixed(2)} segundos</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500">Velocidad promedio</div>
+                              <div>{item.averageSpeed.toFixed(2)} px/frame</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500">Distancia total recorrida</div>
+                              <div>{item.totalDistance.toFixed(2)} px</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500">Cantidad de cambios de dirección</div>
+                              <div>{item.directionChanges.length}</div>
+                            </div>
+                          </div>
 
-                    {item.directionChanges.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <h4 className="text-md font-medium text-gray-800 mb-2">Cronología de los cambios de dirección:</h4>
-                        <div className="space-y-3">
-                          {item.directionChanges.map((change, idx) => (
-                            <div key={idx} className="text-sm pl-2">
-                              <div className="font-medium">
-                                {(change.frame / 30).toFixed(1)} segundos (Frame {change.frame})
-                              </div>
-                              <div className="text-xs text-gray-600 mt-1 ml-3">
-                                Desde ({change.fromCoord.x.toFixed(0)}, {change.fromCoord.y.toFixed(0)}) {change.fromDirection}
-                              </div>
-                              <div className="text-xs text-gray-600 ml-3">
-                                Hacia ({change.toCoord.x.toFixed(0)}, {change.toCoord.y.toFixed(0)}) {change.toDirection}
+                          {item.directionChanges.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <h4 className="text-md font-medium text-gray-800 mb-2">Cronología de los cambios de dirección:</h4>
+                              <div className="space-y-3">
+                                {item.directionChanges.map((change, idx) => (
+                                  <div key={idx} className="text-sm pl-2">
+                                    <div className="font-medium">
+                                      {(change.frame / 30).toFixed(1)} segundos (Frame {change.frame})
+                                    </div>
+                                    <div className="text-xs text-gray-600 mt-1 ml-3">
+                                      Desde ({change.fromCoord.x.toFixed(0)}, {change.fromCoord.y.toFixed(0)}) {change.fromDirection}
+                                    </div>
+                                    <div className="text-xs text-gray-600 ml-3">
+                                      Hacia ({change.toCoord.x.toFixed(0)}, {change.toCoord.y.toFixed(0)}) {change.toDirection}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             </div>
-                          ))}
+                          )}
                         </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
 
-              <DialogFooter className="mt-6">
-                <Button variant="outline" onClick={() => setShowAnalysis(false)}>Cerrar</Button>
-              </DialogFooter>
-            </DialogContent>
+                <DialogFooter className="mt-6">
+                  <Button variant="outline" onClick={() => setShowAnalysis(false)}>Cerrar</Button>
+                </DialogFooter>
+              </DialogContent>
             </Dialog>
           </>
         )}
       </CardContent>
     </Card>
-  )
+  );
 }
