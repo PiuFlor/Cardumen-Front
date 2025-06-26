@@ -189,130 +189,231 @@ export default function Trayectorias({ taskId }: { taskId: string | null }) {
     }
   };
 
-  // Función auxiliar para obtener la descripción de la dirección (solo el núcleo de la dirección)
-  function getDirectionDescription(dx: number, dy: number): string {
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-    const movementThreshold = 0.5; // Un umbral para considerar que hay movimiento significativo
+ function calculateDirectionChanges(points: Point[], angleThreshold: number = 45): any[] {
+  if (points.length < 3) return [];
 
-    let horizontalPart = '';
-    let verticalPart = '';
-
-    // Determinar la parte horizontal del movimiento
-    if (absDx > movementThreshold) {
-      horizontalPart = dx > 0 ? 'la derecha' : 'la izquierda';
-    }
-
-    // Determinar la parte vertical del movimiento
-    if (absDy > movementThreshold) {
-      // En sistemas de coordenadas de imagen, 'y' aumenta hacia abajo.
-      verticalPart = dy < 0 ? 'arriba' : 'abajo';
-    }
-
-    // Construir la frase final
-    if (horizontalPart && verticalPart) {
-      // Si hay movimiento tanto horizontal como vertical (diagonal)
-      // Se combina con "a" (ej: "arriba a la derecha")
-      return `${verticalPart} a ${horizontalPart}`; // CAMBIO AQUÍ: 'y' por 'a'
-    } else if (horizontalPart) {
-      // Si es solo movimiento horizontal
-      return horizontalPart;
-    } else if (verticalPart) {
-      // Si es solo movimiento vertical
-      return verticalPart;
-    } else {
-      // Si no hay movimiento significativo
-      return 'sin movimiento significativo';
-    }
-  }
-
-  const analyzeTrajectories = (angleThreshold: number = 45) => {
-    if (selectedIds.size === 0) return;
-
-    const analysis: TrajectoryAnalysis[] = [];
-
-    Array.from(selectedIds).forEach(id => {
-      const points = trajectories[id];
-      if (!points || points.length < 2) return;
-
-      const sortedPoints = [...points].sort((a, b) => (a.frame || 0) - (b.frame || 0));
-
-      const firstDetection = sortedPoints[0].frame || 0;
-      const lastDetection = sortedPoints[sortedPoints.length - 1].frame || 0;
-
-      const totalFrames = lastDetection - firstDetection + 1;
-      const durationSeconds = totalFrames / 30;
-
-      let totalDistance = 0;
-      const speeds: number[] = [];
-
-      for (let i = 1; i < sortedPoints.length; i++) {
-        const dx = sortedPoints[i].x - sortedPoints[i - 1].x;
-        const dy = sortedPoints[i].y - sortedPoints[i - 1].y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        totalDistance += distance;
-
-        const frameDiff = (sortedPoints[i].frame || i) - (sortedPoints[i - 1].frame || (i - 1));
-        if (frameDiff > 0) speeds.push(distance / frameDiff);
-      }
-
-      const directionChanges: {
-        frame: number;
-        angle: number;
-        fromCoord: { x: number; y: number };
-        toCoord: { x: number; y: number };
-        fromDirection: string;
-        toDirection: string;
-      }[] = [];
-
-      for (let i = 1; i < sortedPoints.length - 1; i++) {
-        const prev = sortedPoints[i - 1]; // Punto antes del cambio
-        const curr = sortedPoints[i];     // Punto en el que se detecta el cambio
-        const next = sortedPoints[i + 1]; // Punto después del cambio
-
-        // Vectores de movimiento
-        const v1 = { x: curr.x - prev.x, y: curr.y - prev.y }; // Vector ANTES del punto actual (prev -> curr)
-        const v2 = { x: next.x - curr.x, y: next.y - curr.y }; // Vector DESPUÉS del punto actual (curr -> next)
-
-        const dot = v1.x * v2.x + v1.y * v2.y;
-        const mag1 = Math.sqrt(v1.x ** 2 + v1.y ** 2);
-        const mag2 = Math.sqrt(v2.x ** 2 + v2.y ** 2);
-
-        if (mag1 > 0.1 && mag2 > 0.1) {
-          const angle = Math.acos(dot / (mag1 * mag2)) * (180 / Math.PI);
-          if (angle > angleThreshold) {
-            // Obtener descripciones de dirección
-            const fromDirectionText = getDirectionDescription(v1.x, v1.y);
-            const toDirectionText = getDirectionDescription(v2.x, v2.y);
-
-            directionChanges.push({
-              frame: curr.frame || i,
-              angle,
-              fromCoord: { x: prev.x, y: prev.y }, // Coordenadas del punto 'prev'
-              toCoord: { x: next.x, y: next.y },   // Coordenadas del punto 'next'
-              fromDirection: fromDirectionText,
-              toDirection: toDirectionText,
-            });
-          }
-        }
-      }
-
-      analysis.push({
-        id,
-        firstDetection,
-        lastDetection,
-        durationSeconds,
-        directionChanges,
-        totalDistance,
-        averageSpeed: speeds.length ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0
-      });
-    });
-
-    setTrajectoryAnalysis(analysis);
-    setShowAnalysis(true);
+  const changes = [];
+  const minSegmentLength = 5; // Número mínimo de puntos para considerar un segmento
+  
+  // Función para calcular el ángulo entre tres puntos
+  const calculateAngle = (p1: Point, p2: Point, p3: Point): number => {
+    // Vectores entre puntos
+    const v1 = { x: p2.x - p1.x, y: p2.y - p1.y };
+    const v2 = { x: p3.x - p2.x, y: p3.y - p2.y };
+    
+    // Magnitudes de los vectores
+    const mag1 = Math.sqrt(v1.x * v1.x + v1.y * v1.y);
+    const mag2 = Math.sqrt(v2.x * v2.x + v2.y * v2.y);
+    
+    // Producto punto
+    const dot = v1.x * v2.x + v1.y * v2.y;
+    
+    // Ángulo en radianes
+    let angle = Math.acos(dot / (mag1 * mag2));
+    
+    // Convertir a grados
+    return angle * (180 / Math.PI);
   };
 
+  // Función para suavizar la trayectoria (promedio móvil)
+  const smoothPoints = (points: Point[], windowSize = 3): Point[] => {
+    if (points.length <= windowSize) return points;
+    
+    const smoothed: Point[] = [];
+    for (let i = 0; i < points.length; i++) {
+      const start = Math.max(0, i - Math.floor(windowSize / 2));
+      const end = Math.min(points.length - 1, i + Math.floor(windowSize / 2));
+      
+      let sumX = 0;
+      let sumY = 0;
+      let count = 0;
+      
+      for (let j = start; j <= end; j++) {
+        sumX += points[j].x;
+        sumY += points[j].y;
+        count++;
+      }
+      
+      smoothed.push({
+        x: sumX / count,
+        y: sumY / count,
+        frame: points[i].frame
+      });
+    }
+    
+    return smoothed;
+  };
 
+  // Suavizar los puntos primero para reducir ruido
+  const smoothedPoints = smoothPoints(points);
+  
+  // Dividir la trayectoria en segmentos y analizar cambios
+  let segmentStart = 0;
+  for (let i = 2; i < smoothedPoints.length; i++) {
+    const p1 = smoothedPoints[i-2];
+    const p2 = smoothedPoints[i-1];
+    const p3 = smoothedPoints[i];
+    
+    const angle = calculateAngle(p1, p2, p3);
+    
+    if (angle > angleThreshold) {
+      // Verificar que el segmento tenga suficiente longitud
+      if (i - segmentStart >= minSegmentLength) {
+        // Calcular dirección antes y después del cambio
+        const prevSegment = smoothedPoints.slice(segmentStart, i-1);
+        const nextSegment = smoothedPoints.slice(i);
+        
+        const prevDirection = getAverageDirection(prevSegment);
+        const nextDirection = getAverageDirection(nextSegment);
+        
+        changes.push({
+          frame: p2.frame || i-1,
+          angle: Math.round(angle * 10) / 10,
+          fromCoord: { x: p1.x, y: p1.y },
+          toCoord: { x: p3.x, y: p3.y },
+          fromDirection: getDirectionDescription(prevDirection.x, prevDirection.y),
+          toDirection: getDirectionDescription(nextDirection.x, nextDirection.y),
+          point: { x: p2.x, y: p2.y }
+        });
+        
+        segmentStart = i;
+      }
+    }
+  }
+  
+  return changes;
+}
+
+// Función auxiliar para calcular la dirección promedio de un segmento
+function getAverageDirection(points: Point[]): {x: number, y: number} {
+  if (points.length < 2) return {x: 0, y: 0};
+  
+  let sumX = 0;
+  let sumY = 0;
+  
+  for (let i = 1; i < points.length; i++) {
+    sumX += points[i].x - points[i-1].x;
+    sumY += points[i].y - points[i-1].y;
+  }
+  
+  return {
+    x: sumX / (points.length - 1),
+    y: sumY / (points.length - 1)
+  };
+}
+
+// Función para calcular ángulo entre vectores (mejorada)
+function calculateAngleBetweenVectors(dx1: number, dy1: number, dx2: number, dy2: number): number {
+  // Normalizar vectores
+  const mag1 = Math.sqrt(dx1*dx1 + dy1*dy1);
+  const mag2 = Math.sqrt(dx2*dx2 + dy2*dy2);
+  
+  if (mag1 === 0 || mag2 === 0) return 0;
+  
+  // Producto punto
+  const dot = dx1*dx2 + dy1*dy2;
+  
+  // Calcular coseno del ángulo (con protección contra errores de precisión)
+  let cosTheta = dot / (mag1 * mag2);
+  cosTheta = Math.max(-1, Math.min(1, cosTheta)); // Clamp entre -1 y 1
+  
+  // Calcular ángulo en radianes y convertir a grados
+  const angleRad = Math.acos(cosTheta);
+  return angleRad * (180 / Math.PI);
+}
+
+  // Función auxiliar para obtener la descripción de la dirección (solo el núcleo de la dirección)
+ function getDirectionDescription(dx: number, dy: number): string {
+  const magnitude = Math.sqrt(dx*dx + dy*dy);
+  
+  if (magnitude < 0.1) return "estático";
+  
+  // Normalizar
+  const nx = dx / magnitude;
+  const ny = dy / magnitude;
+  
+  // Calcular ángulo en grados (0-360)
+  let angle = Math.atan2(ny, nx) * (180 / Math.PI);
+  if (angle < 0) angle += 360;
+  
+  // Direcciones cardinales con umbrales ajustados
+  const directions = [
+    {angle: 0, name: "derecha"},
+    {angle: 45, name: "arriba-derecha"},
+    {angle: 90, name: "arriba"},
+    {angle: 135, name: "arriba-izquierda"},
+    {angle: 180, name: "izquierda"},
+    {angle: 225, name: "abajo-izquierda"},
+    {angle: 270, name: "abajo"},
+    {angle: 315, name: "abajo-derecha"},
+    {angle: 360, name: "derecha"}
+  ];
+  
+  // Encontrar la dirección más cercana
+  let closest = directions[0];
+  let minDiff = Math.abs(angle - directions[0].angle);
+  
+  for (const dir of directions.slice(1)) {
+    const diff = Math.abs(angle - dir.angle);
+    if (diff < minDiff) {
+      minDiff = diff;
+      closest = dir;
+    }
+  }
+  
+  return closest.name;
+}
+
+
+ const analyzeTrajectories = (angleThreshold: number = 45) => {
+  if (selectedIds.size === 0) return;
+
+  const analysis: TrajectoryAnalysis[] = [];
+
+  Array.from(selectedIds).forEach(id => {
+    const points = trajectories[id];
+    if (!points || points.length < 3) return;
+
+    // Ordenar puntos por frame number
+    const sortedPoints = [...points].sort((a, b) => (a.frame || 0) - (b.frame || 0));
+
+    const firstDetection = sortedPoints[0].frame || 0;
+    const lastDetection = sortedPoints[sortedPoints.length - 1].frame || 0;
+    const durationSeconds = (lastDetection - firstDetection) / 30; // Asumiendo 30fps
+
+    // Calcular distancia total y velocidad
+    let totalDistance = 0;
+    const speeds: number[] = [];
+
+    for (let i = 1; i < sortedPoints.length; i++) {
+      const dx = sortedPoints[i].x - sortedPoints[i-1].x;
+      const dy = sortedPoints[i].y - sortedPoints[i-1].y;
+      const distance = Math.sqrt(dx*dx + dy*dy);
+      totalDistance += distance;
+      
+      // Calcular velocidad (px por frame)
+      const frameDiff = (sortedPoints[i].frame || i) - (sortedPoints[i-1].frame || (i-1));
+      const speed = frameDiff > 0 ? distance / frameDiff : 0;
+      speeds.push(speed);
+    }
+
+    // Calcular cambios de dirección usando la nueva función
+    const directionChanges = calculateDirectionChanges(sortedPoints, angleThreshold);
+
+    analysis.push({
+      id,
+      firstDetection,
+      lastDetection,
+      durationSeconds,
+      directionChanges,
+      totalDistance,
+      averageSpeed: speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0
+    });
+  });
+
+  setTrajectoryAnalysis(analysis);
+  setShowAnalysis(true);
+};
 
   // Handlers para zoom y pan
   const handleMouseDown = (e: React.MouseEvent) => {
