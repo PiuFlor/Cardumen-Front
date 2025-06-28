@@ -7,7 +7,8 @@ import { Button } from "./components/ui/button";
 import { Card, CardContent } from "./components/ui/card";
 import { Camera, Film, Play, Square, BarChart2 } from "lucide-react";
 import ParametersSelector from "./components/parameters-selector";
-import Trayectorias from "./components/trayectorias"
+import Trayectorias from "./components/trayectorias";
+import GroupBehaviorChart from "./components/group-behavior-chart.js";
 
 export default function App() {
   const [videoSource, setVideoSource] = useState<"file" | "webcam" | "stream">("webcam");
@@ -30,6 +31,7 @@ export default function App() {
   
   const [fps, setFps] = useState("0");
   const [resolution, setResolution] = useState("0");
+  const [analyzeGroups, setAnalyzeGroups] = useState<boolean>(false);
 
   // Cargar modelos disponibles
   useEffect(() => {
@@ -163,6 +165,7 @@ export default function App() {
                 />
               </CardContent>
             </Card>
+
             {/*Parametros */}
             {videoSource === "file" && (
             <Card className="overflow-hidden border-none shadow-lg bg-white">
@@ -182,6 +185,18 @@ export default function App() {
               </CardContent>
             </Card>
             )}
+            <div className="mt-4 flex items-center space-x-2">
+              <input
+                id="group-behavior"
+                type="checkbox"
+                checked={analyzeGroups}
+                onChange={() => setAnalyzeGroups(prev => !prev)}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+              />
+              <label htmlFor="group-behavior" className="text-sm text-gray-700">
+                Analizar comportamiento grupal
+              </label>
+            </div>
             {/* Botón de análisis */}
             <Button
               className="w-full py-6 text-lg shadow-lg transition-all duration-300 hover:scale-105 bg-blue-600 hover:bg-blue-700 text-white"
@@ -230,12 +245,16 @@ export default function App() {
                   fps={fps}
                   res={resolution}
                   selectedCameraId={selectedCameraId}
+                  analyzeGroups={analyzeGroups}
                 />
               </CardContent>
             </Card>
             {/* MOSTRAR TRAYECTORIA */}
             { framework === 'yolo' && processedVideoUrl && (<Trayectorias taskId={taskId}/>)}
+            {/* NO FUNCIONA TODAVIA {taskId && <GroupBehaviorChart taskId={taskId} />} */}
+
           </div>
+
         </div>
       </div>
 

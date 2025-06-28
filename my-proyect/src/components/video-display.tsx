@@ -18,6 +18,7 @@ interface VideoDisplayProps {
   fps: string
   res: string
   selectedCameraId: string
+  analyzeGroups: boolean
 }
 
 export default function VideoDisplay({
@@ -32,7 +33,8 @@ export default function VideoDisplay({
   processedUrl,
   fps,
   res,
-  selectedCameraId
+  selectedCameraId,
+  analyzeGroups,
 }: VideoDisplayProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -406,6 +408,8 @@ export default function VideoDisplay({
     formData.append('modelo', model)
     formData.append('fps', fps)
     formData.append('res', res)
+    formData.append("analyze_groups", String(analyzeGroups));
+
 
     try {
       const uploadResponse = await fetch('http://localhost:8000/upload', {
